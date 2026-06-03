@@ -37,7 +37,7 @@ export const ENTITIES: Record<string, EntityMeta> = {
     kind: "salesDoc",
     keyField: "DocEntry",
     keyIsString: false,
-    defaultSelect: ["DocEntry", "DocNum", "CardCode", "CardName", "DocDate", "DocTotal", "DocStatus"],
+    defaultSelect: ["DocEntry", "DocNum", "CardCode", "CardName", "DocDate", "DocTotal", "DocumentStatus"],
     searchFields: ["CardCode", "CardName"],
   },
   Orders: {
@@ -46,7 +46,7 @@ export const ENTITIES: Record<string, EntityMeta> = {
     kind: "salesDoc",
     keyField: "DocEntry",
     keyIsString: false,
-    defaultSelect: ["DocEntry", "DocNum", "CardCode", "CardName", "DocDate", "DocTotal", "DocStatus"],
+    defaultSelect: ["DocEntry", "DocNum", "CardCode", "CardName", "DocDate", "DocTotal", "DocumentStatus"],
     searchFields: ["CardCode", "CardName"],
   },
   Invoices: {
@@ -55,7 +55,7 @@ export const ENTITIES: Record<string, EntityMeta> = {
     kind: "salesDoc",
     keyField: "DocEntry",
     keyIsString: false,
-    defaultSelect: ["DocEntry", "DocNum", "CardCode", "CardName", "DocDate", "DocTotal", "DocStatus"],
+    defaultSelect: ["DocEntry", "DocNum", "CardCode", "CardName", "DocDate", "DocTotal", "DocumentStatus"],
     searchFields: ["CardCode", "CardName"],
   },
   PurchaseOrders: {
@@ -64,7 +64,7 @@ export const ENTITIES: Record<string, EntityMeta> = {
     kind: "purchaseDoc",
     keyField: "DocEntry",
     keyIsString: false,
-    defaultSelect: ["DocEntry", "DocNum", "CardCode", "CardName", "DocDate", "DocTotal", "DocStatus"],
+    defaultSelect: ["DocEntry", "DocNum", "CardCode", "CardName", "DocDate", "DocTotal", "DocumentStatus"],
     searchFields: ["CardCode", "CardName"],
   },
   PurchaseInvoices: {
@@ -73,7 +73,7 @@ export const ENTITIES: Record<string, EntityMeta> = {
     kind: "purchaseDoc",
     keyField: "DocEntry",
     keyIsString: false,
-    defaultSelect: ["DocEntry", "DocNum", "CardCode", "CardName", "DocDate", "DocTotal", "DocStatus"],
+    defaultSelect: ["DocEntry", "DocNum", "CardCode", "CardName", "DocDate", "DocTotal", "DocumentStatus"],
     searchFields: ["CardCode", "CardName"],
   },
 };
