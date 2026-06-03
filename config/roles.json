@@ -1,0 +1,49 @@
+{
+  "_comment": "Define los roles y qué operaciones puede hacer cada uno sobre cada entidad de SAP B1. Operaciones válidas: read, create, update. Use '*' como entidad para conceder todas. Las entidades coinciden con el nombre del recurso del Service Layer (BusinessPartners, Quotations, Orders, Invoices, PurchaseOrders, PurchaseInvoices).",
+  "roles": {
+    "admin": {
+      "description": "Acceso total a todas las entidades y operaciones.",
+      "entities": {
+        "*": ["read", "create", "update"]
+      }
+    },
+    "ventas": {
+      "description": "Equipo comercial: socios de negocio y ciclo de ventas.",
+      "entities": {
+        "BusinessPartners": ["read", "create", "update"],
+        "Quotations": ["read", "create", "update"],
+        "Orders": ["read", "create", "update"],
+        "Invoices": ["read", "create"]
+      }
+    },
+    "compras": {
+      "description": "Equipo de compras: proveedores y ciclo de compras.",
+      "entities": {
+        "BusinessPartners": ["read"],
+        "PurchaseOrders": ["read", "create", "update"],
+        "PurchaseInvoices": ["read", "create"]
+      }
+    },
+    "finanzas": {
+      "description": "Finanzas: consulta documentos de venta y compra.",
+      "entities": {
+        "BusinessPartners": ["read"],
+        "Invoices": ["read"],
+        "PurchaseInvoices": ["read"],
+        "Orders": ["read"],
+        "PurchaseOrders": ["read"]
+      }
+    },
+    "consulta": {
+      "description": "Solo lectura general.",
+      "entities": {
+        "BusinessPartners": ["read"],
+        "Quotations": ["read"],
+        "Orders": ["read"],
+        "Invoices": ["read"],
+        "PurchaseOrders": ["read"],
+        "PurchaseInvoices": ["read"]
+      }
+    }
+  }
+}

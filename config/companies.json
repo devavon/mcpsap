@@ -1,0 +1,181 @@
+{
+  "_comment": "Empresas de SAP B1. El alias es la propia CompanyDB. Todas usan SAP_SL_URL del .env (misma ruta). Ajuste 'label' con el nombre comercial si lo desea.",
+  "companies": {
+    "SBO_PR_CF2": {
+      "label": "SBO_PR_CF2",
+      "companyDB": "SBO_PR_CF2"
+    },
+    "SBO_GN_BRL": {
+      "label": "SBO_GN_BRL",
+      "companyDB": "SBO_GN_BRL"
+    },
+    "SBO_PR_DMA": {
+      "label": "SBO_PR_DMA",
+      "companyDB": "SBO_PR_DMA"
+    },
+    "SBO_PR_SSE": {
+      "label": "SBO_PR_SSE",
+      "companyDB": "SBO_PR_SSE"
+    },
+    "SBO_PR_CVO": {
+      "label": "SBO_PR_CVO",
+      "companyDB": "SBO_PR_CVO"
+    },
+    "SBO_PR_LTE": {
+      "label": "SBO_PR_LTE",
+      "companyDB": "SBO_PR_LTE"
+    },
+    "SBO_PR_ZFL2": {
+      "label": "SBO_PR_ZFL2",
+      "companyDB": "SBO_PR_ZFL2"
+    },
+    "SBO_PR_PIO": {
+      "label": "SBO_PR_PIO",
+      "companyDB": "SBO_PR_PIO"
+    },
+    "SBO_PR_QBO": {
+      "label": "SBO_PR_QBO",
+      "companyDB": "SBO_PR_QBO"
+    },
+    "SBO_PR_IILPG": {
+      "label": "SBO_PR_IILPG",
+      "companyDB": "SBO_PR_IILPG"
+    },
+    "SBO_PR_MDO": {
+      "label": "SBO_PR_MDO",
+      "companyDB": "SBO_PR_MDO"
+    },
+    "SBO_PR_NQN": {
+      "label": "SBO_PR_NQN",
+      "companyDB": "SBO_PR_NQN"
+    },
+    "SBO_GN_LLX": {
+      "label": "SBO_GN_LLX",
+      "companyDB": "SBO_GN_LLX"
+    },
+    "SBO_AVON": {
+      "label": "SBO_AVON",
+      "companyDB": "SBO_AVON"
+    },
+    "SBO_GN_GDI": {
+      "label": "SBO_GN_GDI",
+      "companyDB": "SBO_GN_GDI"
+    },
+    "SBO_GN_PPR": {
+      "label": "SBO_GN_PPR",
+      "companyDB": "SBO_GN_PPR"
+    },
+    "SBO_CD_CAT": {
+      "label": "SBO_CD_CAT",
+      "companyDB": "SBO_CD_CAT"
+    },
+    "SBO_CD_CBRL": {
+      "label": "SBO_CD_CBRL",
+      "companyDB": "SBO_CD_CBRL"
+    },
+    "SBO_CD_CRV": {
+      "label": "SBO_CD_CRV",
+      "companyDB": "SBO_CD_CRV"
+    },
+    "SBO_CD_CRB": {
+      "label": "SBO_CD_CRB",
+      "companyDB": "SBO_CD_CRB"
+    },
+    "SBO_CD_CC1": {
+      "label": "SBO_CD_CC1",
+      "companyDB": "SBO_CD_CC1"
+    },
+    "SBO_CD_CIF": {
+      "label": "SBO_CD_CIF",
+      "companyDB": "SBO_CD_CIF"
+    },
+    "SBO_CD_RHC": {
+      "label": "SBO_CD_RHC",
+      "companyDB": "SBO_CD_RHC"
+    },
+    "SBO_CD_CHE2": {
+      "label": "SBO_CD_CHE2",
+      "companyDB": "SBO_CD_CHE2"
+    },
+    "SBO_CD_RHN": {
+      "label": "SBO_CD_RHN",
+      "companyDB": "SBO_CD_RHN"
+    },
+    "SBO_CD_CRHE": {
+      "label": "SBO_CD_CRHE",
+      "companyDB": "SBO_CD_CRHE"
+    },
+    "SBO_CD_CHE3": {
+      "label": "SBO_CD_CHE3",
+      "companyDB": "SBO_CD_CHE3"
+    },
+    "SBO_CD_EFM": {
+      "label": "SBO_CD_EFM",
+      "companyDB": "SBO_CD_EFM"
+    },
+    "SBO_CD_CPL": {
+      "label": "SBO_CD_CPL",
+      "companyDB": "SBO_CD_CPL"
+    },
+    "SBO_CD_CC2": {
+      "label": "SBO_CD_CC2",
+      "companyDB": "SBO_CD_CC2"
+    },
+    "SBO_GN_FED": {
+      "label": "SBO_GN_FED",
+      "companyDB": "SBO_GN_FED"
+    },
+    "SBO_PR_CHP": {
+      "label": "SBO_PR_CHP",
+      "companyDB": "SBO_PR_CHP"
+    },
+    "SBO_GN_DSN": {
+      "label": "SBO_GN_DSN",
+      "companyDB": "SBO_GN_DSN"
+    },
+    "SBO_PR_CRP": {
+      "label": "SBO_PR_CRP",
+      "companyDB": "SBO_PR_CRP"
+    },
+    "SBO_GN_3_101_839038": {
+      "label": "SBO_GN_3_101_839038",
+      "companyDB": "SBO_GN_3_101_839038"
+    },
+    "SBO_GN_FWD": {
+      "label": "SBO_GN_FWD",
+      "companyDB": "SBO_GN_FWD"
+    },
+    "SBO_GN_WW": {
+      "label": "SBO_GN_WW",
+      "companyDB": "SBO_GN_WW"
+    },
+    "SBO_GN_IIBV": {
+      "label": "SBO_GN_IIBV",
+      "companyDB": "SBO_GN_IIBV"
+    },
+    "SBO_GN_494": {
+      "label": "SBO_GN_494",
+      "companyDB": "SBO_GN_494"
+    },
+    "SBO_GD_CPG": {
+      "label": "SBO_GD_CPG",
+      "companyDB": "SBO_GD_CPG"
+    },
+    "SBO_PR_CHPS": {
+      "label": "SBO_PR_CHPS",
+      "companyDB": "SBO_PR_CHPS"
+    },
+    "SBO_GN_GAQ": {
+      "label": "SBO_GN_GAQ",
+      "companyDB": "SBO_GN_GAQ"
+    },
+    "SBO_GN_DSSA": {
+      "label": "SBO_GN_DSSA",
+      "companyDB": "SBO_GN_DSSA"
+    },
+    "SBO_GN_DCSA": {
+      "label": "SBO_GN_DCSA",
+      "companyDB": "SBO_GN_DCSA"
+    }
+  }
+}

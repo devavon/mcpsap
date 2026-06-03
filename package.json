@@ -1,0 +1,36 @@
+{
+  "name": "mcp-sap-b1",
+  "version": "1.0.0",
+  "description": "MCP server para SAP Business One (Service Layer + HANA) con control de permisos por rol, confirmación de escrituras y auditoría completa.",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "mcp-sap-b1": "dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsx watch src/index.ts",
+    "useradd": "tsx src/cli/useradd.ts",
+    "test:sap": "tsx src/cli/testsap.ts",
+    "smoke": "node scripts/mcp-smoke.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.0",
+    "bcryptjs": "^2.4.3",
+    "dotenv": "^16.4.5",
+    "express": "^4.21.2",
+    "undici": "^6.21.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
+    "@types/express": "^4.17.21",
+    "@types/node": "^22.10.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}

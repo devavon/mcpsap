@@ -1,0 +1,29 @@
+{
+  "_comment": "Copie este archivo a config/users.json y administre usuarios con 'npm run useradd'. NUNCA suba users.json al control de versiones (contiene hashes de contraseñas). 'companies' = aliases de config/companies.json a los que el usuario tiene acceso; use '*' o omita para todas.",
+  "users": [
+    {
+      "username": "admin",
+      "fullName": "Administrador",
+      "role": "admin",
+      "passwordHash": "$2a$10$REEMPLAZAR_CON_HASH_REAL_GENERADO_POR_useradd",
+      "active": true,
+      "companies": "*"
+    },
+    {
+      "username": "vendedor1",
+      "fullName": "Vendedor Empresa 1",
+      "role": "ventas",
+      "passwordHash": "$2a$10$REEMPLAZAR_CON_HASH_REAL_GENERADO_POR_useradd",
+      "active": true,
+      "companies": ["empresa1"]
+    },
+    {
+      "username": "gerente",
+      "fullName": "Gerente Multiempresa",
+      "role": "finanzas",
+      "passwordHash": "$2a$10$REEMPLAZAR_CON_HASH_REAL_GENERADO_POR_useradd",
+      "active": true,
+      "companies": ["empresa1", "empresa2"]
+    }
+  ]
+}

@@ -1,0 +1,14 @@
+node_modules
+dist
+.env
+.env.*
+!.env.example
+audit-logs
+*.log
+.git
+.gitignore
+.DS_Store
+# Nunca hornear secretos en la imagen: los usuarios van por USERS_JSON (env).
+config/users.json
+README.md
+scripts

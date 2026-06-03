@@ -1,0 +1,18 @@
+{
+  "_comment": "Copie este archivo a config/companies.json y defina sus empresas. 'alias' es la clave de cada entrada (úselo en users.json y en select_company). 'companyDB' es la base de datos de la compañía en SAP. 'url' es opcional: si se omite usa SAP_SL_URL del .env (útil si todas las empresas comparten el mismo Service Layer).",
+  "companies": {
+    "empresa1": {
+      "label": "Comercial Uno S.A.",
+      "companyDB": "SBO_EMP1"
+    },
+    "empresa2": {
+      "label": "Distribuidora Dos S.A.",
+      "companyDB": "SBO_EMP2"
+    },
+    "empresa3": {
+      "label": "Servicios Tres S.A.",
+      "companyDB": "SBO_EMP3",
+      "url": "https://otro-servidor:50000/b1s/v1"
+    }
+  }
+}

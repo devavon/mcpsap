@@ -1,0 +1,7 @@
+node_modules/
+dist/
+.env
+audit-logs/
+config/users.json
+*.log
+.DS_Store
