@@ -55,7 +55,37 @@ app.post(config.server.path, async (req: Request, res: Response) => {
   let transport = sessionId ? transports.get(sessionId) : undefined;
 
   if (!transport) {
-    if (!isInitializeRequest(req.body)) {
+    if (isInitializeRequest(req.body)) {
+      // Nueva sesión.
+      transport = new StreamableHTTPServerTransport({
+        sessionIdGenerator: () => randomUUID(),
+        onsessioninitialized: (sid) => {
+          transports.set(sid, transport!);
+        },
+      });
+
+      transport.onclose = () => {
+        if (transport!.sessionId) {
+          logout(transport!.sessionId);
+          transports.delete(transport!.sessionId);
+        }
+      };
+
+      const server = createMcpServer();
+      await server.connect(transport);
+    } else if (sessionId) {
+      // El cliente envió un ID de sesión que ya no existe (el servidor se
+      // reinició/redeployó o la sesión expiró). Devolvemos 404 para que el
+      // cliente reinicie la sesión automáticamente (comportamiento del estándar
+      // MCP). Devolver 400 dejaba a Claude atascado con "error de ejecución".
+      res.status(404).json({
+        jsonrpc: "2.0",
+        error: { code: -32001, message: "Sesión no encontrada o expirada. Reinicie con 'initialize'." },
+        id: (req.body && (req.body as any).id) ?? null,
+      });
+      return;
+    } else {
+      // Sin sesión y sin ser initialize.
       res.status(400).json({
         jsonrpc: "2.0",
         error: { code: -32000, message: "Falta sesión válida: envíe primero una petición initialize." },
@@ -63,26 +93,20 @@ app.post(config.server.path, async (req: Request, res: Response) => {
       });
       return;
     }
-    // Nueva sesión.
-    transport = new StreamableHTTPServerTransport({
-      sessionIdGenerator: () => randomUUID(),
-      onsessioninitialized: (sid) => {
-        transports.set(sid, transport!);
-      },
-    });
-
-    transport.onclose = () => {
-      if (transport!.sessionId) {
-        logout(transport!.sessionId);
-        transports.delete(transport!.sessionId);
-      }
-    };
-
-    const server = createMcpServer();
-    await server.connect(transport);
   }
 
-  await transport.handleRequest(req, res, req.body);
+  try {
+    await transport.handleRequest(req, res, req.body);
+  } catch (e) {
+    console.error("[mcp-sap-b1] error manejando POST:", (e as Error).stack ?? e);
+    if (!res.headersSent) {
+      res.status(500).json({
+        jsonrpc: "2.0",
+        error: { code: -32603, message: `Error interno: ${(e as Error).message}` },
+        id: (req.body && (req.body as any).id) ?? null,
+      });
+    }
+  }
 });
 
 // Canal SSE para notificaciones servidor->cliente.
@@ -90,7 +114,8 @@ app.get(config.server.path, async (req: Request, res: Response) => {
   const sessionId = req.headers["mcp-session-id"] as string | undefined;
   const transport = sessionId ? transports.get(sessionId) : undefined;
   if (!transport) {
-    res.status(400).send("Sesión inválida o ausente.");
+    // 404 si la sesión no existe (cliente debe reiniciar); 400 si ni la envió.
+    res.status(sessionId ? 404 : 400).send("Sesión no encontrada o ausente.");
     return;
   }
   await transport.handleRequest(req, res);
@@ -101,7 +126,7 @@ app.delete(config.server.path, async (req: Request, res: Response) => {
   const sessionId = req.headers["mcp-session-id"] as string | undefined;
   const transport = sessionId ? transports.get(sessionId) : undefined;
   if (!transport) {
-    res.status(400).send("Sesión inválida o ausente.");
+    res.status(sessionId ? 404 : 400).send("Sesión no encontrada o ausente.");
     return;
   }
   await transport.handleRequest(req, res);
