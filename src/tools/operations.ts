@@ -13,7 +13,7 @@ import { json, text } from "./helpers.js";
  * Resuelve la empresa activa del usuario y su cliente SAP. Si el usuario tiene
  * varias empresas y no ha seleccionado ninguna, exige que lo haga primero.
  */
-function resolveCompany(user: UserContext): { alias: string; client: ReturnType<typeof getSapClient> } {
+export function resolveCompany(user: UserContext): { alias: string; client: ReturnType<typeof getSapClient> } {
   if (!user.selectedCompany) {
     throw new AuthError(
       `Debe seleccionar una empresa antes de operar. Empresas disponibles: ` +

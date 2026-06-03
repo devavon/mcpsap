@@ -3,7 +3,7 @@
  * El nombre lógico coincide con el recurso del Service Layer.
  */
 
-export type EntityKind = "master" | "salesDoc" | "purchaseDoc";
+export type EntityKind = "master" | "salesDoc" | "purchaseDoc" | "payment" | "journal";
 
 export interface EntityMeta {
   /** Recurso del Service Layer, ej. "BusinessPartners". */
@@ -19,6 +19,8 @@ export interface EntityMeta {
   defaultSelect: string[];
   /** Campos de texto donde buscar con "contains". */
   searchFields: string[];
+  /** Campo de fecha para filtros por rango (def. DocDate). */
+  dateField?: string;
 }
 
 export const ENTITIES: Record<string, EntityMeta> = {
@@ -75,6 +77,72 @@ export const ENTITIES: Record<string, EntityMeta> = {
     keyIsString: false,
     defaultSelect: ["DocEntry", "DocNum", "CardCode", "CardName", "DocDate", "DocTotal", "DocumentStatus"],
     searchFields: ["CardCode", "CardName"],
+  },
+  CreditNotes: {
+    resource: "CreditNotes",
+    label: "Notas de crédito de cliente",
+    kind: "salesDoc",
+    keyField: "DocEntry",
+    keyIsString: false,
+    defaultSelect: ["DocEntry", "DocNum", "CardCode", "CardName", "DocDate", "DocTotal", "DocumentStatus"],
+    searchFields: ["CardCode", "CardName"],
+  },
+  PurchaseCreditNotes: {
+    resource: "PurchaseCreditNotes",
+    label: "Notas de crédito de proveedor",
+    kind: "purchaseDoc",
+    keyField: "DocEntry",
+    keyIsString: false,
+    defaultSelect: ["DocEntry", "DocNum", "CardCode", "CardName", "DocDate", "DocTotal", "DocumentStatus"],
+    searchFields: ["CardCode", "CardName"],
+  },
+  CorrectionInvoice: {
+    resource: "CorrectionInvoice",
+    label: "Notas de débito / factura de corrección (cliente)",
+    kind: "salesDoc",
+    keyField: "DocEntry",
+    keyIsString: false,
+    defaultSelect: ["DocEntry", "DocNum", "CardCode", "CardName", "DocDate", "DocTotal", "DocumentStatus"],
+    searchFields: ["CardCode", "CardName"],
+  },
+  CorrectionPurchaseInvoice: {
+    resource: "CorrectionPurchaseInvoice",
+    label: "Notas de débito / factura de corrección (proveedor)",
+    kind: "purchaseDoc",
+    keyField: "DocEntry",
+    keyIsString: false,
+    defaultSelect: ["DocEntry", "DocNum", "CardCode", "CardName", "DocDate", "DocTotal", "DocumentStatus"],
+    searchFields: ["CardCode", "CardName"],
+  },
+  IncomingPayments: {
+    resource: "IncomingPayments",
+    label: "Pagos / cobros de clientes",
+    kind: "payment",
+    keyField: "DocEntry",
+    keyIsString: false,
+    defaultSelect: ["DocEntry", "DocNum", "CardCode", "CardName", "DocDate", "DocCurrency", "CashSum", "TransferSum", "DeductionSum"],
+    searchFields: ["CardCode", "CardName"],
+    dateField: "DocDate",
+  },
+  VendorPayments: {
+    resource: "VendorPayments",
+    label: "Pagos a proveedores",
+    kind: "payment",
+    keyField: "DocEntry",
+    keyIsString: false,
+    defaultSelect: ["DocEntry", "DocNum", "CardCode", "CardName", "DocDate", "DocCurrency", "CashSum", "TransferSum", "DeductionSum"],
+    searchFields: ["CardCode", "CardName"],
+    dateField: "DocDate",
+  },
+  JournalEntries: {
+    resource: "JournalEntries",
+    label: "Asientos contables (libro diario)",
+    kind: "journal",
+    keyField: "JdtNum",
+    keyIsString: false,
+    defaultSelect: ["JdtNum", "Number", "ReferenceDate", "TaxDate", "Memo", "Reference"],
+    searchFields: ["Memo", "Reference"],
+    dateField: "ReferenceDate",
   },
 };
 

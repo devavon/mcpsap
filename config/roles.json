@@ -25,13 +25,21 @@
       }
     },
     "finanzas": {
-      "description": "Finanzas: consulta documentos de venta y compra.",
+      "description": "Finanzas: consulta documentos, pagos, asientos y estados financieros.",
       "entities": {
         "BusinessPartners": ["read"],
         "Invoices": ["read"],
         "PurchaseInvoices": ["read"],
         "Orders": ["read"],
-        "PurchaseOrders": ["read"]
+        "PurchaseOrders": ["read"],
+        "CreditNotes": ["read"],
+        "PurchaseCreditNotes": ["read"],
+        "CorrectionInvoice": ["read"],
+        "CorrectionPurchaseInvoice": ["read"],
+        "IncomingPayments": ["read"],
+        "VendorPayments": ["read"],
+        "JournalEntries": ["read"],
+        "Financials": ["read"]
       }
     },
     "consulta": {
@@ -42,7 +50,15 @@
         "Orders": ["read"],
         "Invoices": ["read"],
         "PurchaseOrders": ["read"],
-        "PurchaseInvoices": ["read"]
+        "PurchaseInvoices": ["read"],
+        "CreditNotes": ["read"],
+        "PurchaseCreditNotes": ["read"],
+        "CorrectionInvoice": ["read"],
+        "CorrectionPurchaseInvoice": ["read"],
+        "IncomingPayments": ["read"],
+        "VendorPayments": ["read"],
+        "JournalEntries": ["read"],
+        "Financials": ["read"]
       }
     }
   }

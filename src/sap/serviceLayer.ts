@@ -187,6 +187,33 @@ export class ServiceLayerClient {
     return this.request<T>({ method: "GET", path: full });
   }
 
+  /**
+   * Trae TODAS las filas de un recurso, subiendo el tamaño de página con
+   * 'Prefer: odata.maxpagesize' y siguiendo nextLink si quedaran más.
+   * Útil para estados financieros (plan de cuentas completo).
+   */
+  async getAll<T = any>(
+    resource: string,
+    query?: string,
+    pageSize = 2000,
+    maxPages = 50,
+  ): Promise<T[]> {
+    const all: T[] = [];
+    let path = query ? `${resource}?${query}` : resource;
+    let pages = 0;
+    while (path && pages < maxPages) {
+      const res = await this.request<any>({
+        method: "GET",
+        path,
+        headers: { Prefer: `odata.maxpagesize=${pageSize}` },
+      });
+      if (Array.isArray(res?.value)) all.push(...res.value);
+      path = res?.["odata.nextLink"] ?? res?.["@odata.nextLink"] ?? "";
+      pages++;
+    }
+    return all;
+  }
+
   /** POST que puede devolver o no el recurso completo. */
   async post<T = unknown>(path: string, body: unknown, returnBody = true): Promise<T> {
     return this.request<T>({
