@@ -1,4 +1,5 @@
 import express, { type Request, type Response } from "express";
+import cors from "cors";
 import { randomUUID } from "node:crypto";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
@@ -8,6 +9,11 @@ import { logout, sweepSessions } from "./auth/session.js";
 import { sweepPending } from "./pending/store.js";
 import { logoutAllClients } from "./sap/serviceLayer.js";
 import { getAllCompanies } from "./sap/companies.js";
+import { dbEnabled, initSchema, closePool } from "./db/mysql.js";
+import { seedIfEmpty, refreshConfigCache } from "./db/repo.js";
+import { seedUsers, seedRoles, seedCompanies } from "./db/seedSource.js";
+import { createAdminRouter } from "./admin/router.js";
+import { createRestRouter } from "./rest/router.js";
 
 /**
  * Servidor MCP central por HTTP (StreamableHTTP, con SSE para notificaciones).
@@ -25,8 +31,36 @@ const transports = new Map<string, StreamableHTTPServerTransport>();
 
 // /health no requiere API key (lo usa el healthcheck de la plataforma).
 app.get("/health", (_req, res) => {
-  res.json({ status: "ok", name: "mcp-sap-b1", sessions: transports.size });
+  res.json({ status: "ok", name: "mcp-sap-b1", sessions: transports.size, db: dbEnabled() });
 });
+
+// Panel de administración (requiere DATABASE_URL / MySQL).
+if (dbEnabled()) {
+  app.use("/admin", createAdminRouter());
+} else {
+  app.get("/admin", (_req, res) =>
+    res
+      .status(503)
+      .send("El panel /admin requiere configurar DATABASE_URL (MySQL)."),
+  );
+}
+
+// API REST de solo lectura para el add-in de Excel (Office.js).
+// Usa Bearer token propio (no cookies), por lo que CORS con origen reflejado o
+// "*" es seguro. Restrinja el origen en producción vía REST_CORS_ORIGIN.
+const restCors = cors({
+  origin: process.env.REST_CORS_ORIGIN || true, // true = refleja el Origin de la petición
+  methods: ["GET", "POST", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
+});
+app.use("/api", restCors);
+app.options(/^\/api\/.*/, restCors);
+app.use("/api", createRestRouter());
+
+// Sirve los archivos del add-in de Excel (taskpane, bundles, assets, manifest)
+// desde ./public, para alojar API + add-in en un mismo dominio (sin CORS).
+// La carpeta public/ se genera con `npm run dist` en el proyecto del add-in.
+app.use(express.static("public"));
 
 // Protección por API key (opcional pero recomendada al exponer públicamente).
 // Acepta cabecera 'x-api-key' o 'Authorization: Bearer <key>'.
@@ -139,24 +173,72 @@ const sweepTimer = setInterval(() => {
 }, 60_000);
 sweepTimer.unref();
 
-const httpServer = app.listen(config.server.port, config.server.host, () => {
-  console.error(
-    `[mcp-sap-b1] escuchando en http://${config.server.host}:${config.server.port}${config.server.path}`,
-  );
-  try {
-    const cos = getAllCompanies();
-    console.error(
-      `[mcp-sap-b1] SAP Service Layer: ${config.sap.url} — ${cos.length} empresa(s): ` +
-        cos.map((c) => `${c.alias}(${c.companyDB})`).join(", "),
-    );
-  } catch (e) {
-    console.error(`[mcp-sap-b1] ⚠️ Configuración de empresas: ${(e as Error).message}`);
+let httpServer: ReturnType<typeof app.listen>;
+let refreshTimer: ReturnType<typeof setInterval> | undefined;
+
+/** Inicializa la base de datos (si está habilitada) y arranca el servidor. */
+async function start() {
+  if (dbEnabled()) {
+    try {
+      console.error("[mcp-sap-b1] Inicializando MySQL…");
+      await initSchema();
+      await seedIfEmpty({ users: seedUsers(), roles: seedRoles(), companies: seedCompanies() });
+      await refreshConfigCache();
+      // Refresco periódico de la caché para reflejar cambios del panel.
+      refreshTimer = setInterval(() => {
+        refreshConfigCache().catch((e) => console.error("[mcp-sap-b1] refresh DB:", (e as Error).message));
+      }, 20_000);
+      refreshTimer.unref();
+      console.error("[mcp-sap-b1] MySQL listo. Panel: /admin");
+    } catch (e) {
+      console.error(`[mcp-sap-b1] ❌ Error inicializando MySQL: ${(e as Error).message}`);
+      process.exit(1);
+    }
   }
-});
+
+  // HTTPS opcional para desarrollo local: necesario cuando el add-in de Excel
+  // (servido por HTTPS) llama a este backend, ya que el navegador/WebView
+  // bloquea contenido mixto. Defina HTTPS_KEY y HTTPS_CERT (p.ej. los certs de
+  // 'npx office-addin-dev-certs install'). En Railway se ignora (usa HTTP/TLS de
+  // la plataforma).
+  const keyPath = process.env.HTTPS_KEY;
+  const certPath = process.env.HTTPS_CERT;
+  const useHttps = !!(keyPath && certPath);
+  const scheme = useHttps ? "https" : "http";
+
+  const onListen = () => {
+    console.error(
+      `[mcp-sap-b1] escuchando en ${scheme}://${config.server.host}:${config.server.port}${config.server.path}`,
+    );
+    console.error(`[mcp-sap-b1] API REST (Excel) en ${scheme}://${config.server.host}:${config.server.port}/api`);
+    try {
+      const cos = getAllCompanies();
+      console.error(
+        `[mcp-sap-b1] SAP Service Layer: ${config.sap.url} — ${cos.length} empresa(s)` +
+          (dbEnabled() ? " (fuente: MySQL)" : ""),
+      );
+    } catch (e) {
+      console.error(`[mcp-sap-b1] ⚠️ Configuración de empresas: ${(e as Error).message}`);
+    }
+  };
+
+  if (useHttps) {
+    const https = await import("node:https");
+    const { readFileSync } = await import("node:fs");
+    httpServer = https
+      .createServer({ key: readFileSync(keyPath!), cert: readFileSync(certPath!) }, app)
+      .listen(config.server.port, config.server.host, onListen) as unknown as typeof httpServer;
+  } else {
+    httpServer = app.listen(config.server.port, config.server.host, onListen);
+  }
+}
+
+void start();
 
 async function shutdown() {
   console.error("[mcp-sap-b1] cerrando…");
   clearInterval(sweepTimer);
+  if (refreshTimer) clearInterval(refreshTimer);
   for (const t of transports.values()) {
     try {
       await t.close();
@@ -165,7 +247,8 @@ async function shutdown() {
     }
   }
   await logoutAllClients();
-  httpServer.close(() => process.exit(0));
+  await closePool();
+  httpServer?.close(() => process.exit(0));
   setTimeout(() => process.exit(0), 3000).unref();
 }
 

@@ -54,6 +54,16 @@ export const config = {
     usersFile: optional("USERS_FILE", "./config/users.json"),
     companiesFile: optional("COMPANIES_FILE", "./config/companies.json"),
   },
+  db: {
+    // Si se define, usuarios/roles/empresas/auditoría se gestionan en MySQL
+    // (fuente de verdad) y se habilita el panel /admin.
+    url: optional("DATABASE_URL", ""),
+  },
+  admin: {
+    // Usuario superadmin inicial para entrar al panel (se siembra si no existe).
+    superUser: optional("SUPERADMIN_USERNAME", "superadmin"),
+    superPassword: optional("SUPERADMIN_PASSWORD", ""),
+  },
   audit: {
     dir: optional("AUDIT_DIR", "./audit-logs"),
     // En plataformas con disco efímero (Railway), conviene loguear también a

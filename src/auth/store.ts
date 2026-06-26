@@ -2,6 +2,8 @@ import { readFileSync, existsSync, statSync } from "node:fs";
 import { resolve } from "node:path";
 import { config } from "../config.js";
 import type { RolesConfig, UsersConfig, UserRecord, RoleDef } from "../types.js";
+import { dbEnabled } from "../db/mysql.js";
+import { cachedRoles, cachedUsers } from "../db/repo.js";
 
 /**
  * Carga (y cachea) los archivos de configuración de roles y usuarios.
@@ -25,6 +27,7 @@ function loadJson<T>(path: string): { mtime: number; data: T } {
 }
 
 export function getRoles(): RolesConfig {
+  if (dbEnabled()) return cachedRoles();
   if (process.env.ROLES_JSON) {
     if (!rolesEnvCache) rolesEnvCache = JSON.parse(process.env.ROLES_JSON) as RolesConfig;
     return rolesEnvCache;
@@ -38,6 +41,7 @@ export function getRoles(): RolesConfig {
 }
 
 export function getUsers(): UsersConfig {
+  if (dbEnabled()) return cachedUsers();
   if (process.env.USERS_JSON) {
     if (!usersEnvCache) usersEnvCache = JSON.parse(process.env.USERS_JSON) as UsersConfig;
     return usersEnvCache;

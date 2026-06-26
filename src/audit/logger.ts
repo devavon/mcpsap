@@ -2,6 +2,8 @@ import { appendFileSync, mkdirSync, existsSync } from "node:fs";
 import { resolve, join } from "node:path";
 import { config } from "../config.js";
 import type { Operation } from "../types.js";
+import { dbEnabled } from "../db/mysql.js";
+import { insertAudit } from "../db/repo.js";
 
 /**
  * Auditoría completa: registra TODA operación (lectura y escritura) en
@@ -51,6 +53,12 @@ export function audit(event: Omit<AuditEvent, "ts">): void {
   const line = JSON.stringify(full);
   if (config.audit.stdout) {
     console.log(`[audit] ${line}`);
+  }
+  // Persistencia en MySQL (no bloqueante) cuando está habilitada.
+  if (dbEnabled()) {
+    insertAudit({ ...full, params: full.payload }).catch((e) =>
+      console.error("[audit] fallo al insertar en DB:", (e as Error).message),
+    );
   }
   if (fileLoggingDisabled) return;
   try {

@@ -27,6 +27,9 @@ RUN npm ci --omit=dev && npm cache clean --force
 # Artefactos compilados y configuración no secreta.
 COPY --from=build /app/dist ./dist
 COPY config ./config
+# Archivos del add-in de Excel (taskpane, bundles, assets, manifest) que el
+# servidor sirve estáticamente desde ./public (generados con `npm run dist`).
+COPY public ./public
 
 # Carpeta de auditoría con permisos para el usuario no-root.
 RUN mkdir -p /app/audit-logs && chown -R node:node /app/audit-logs

@@ -21,6 +21,18 @@ export interface EntityMeta {
   searchFields: string[];
   /** Campo de fecha para filtros por rango (def. DocDate). */
   dateField?: string;
+  /**
+   * Filtro OData fijo que se aplica SIEMPRE (se combina con AND a los del
+   * usuario). Útil cuando varios "tipos de documento" comparten recurso y se
+   * distinguen por una columna (p.ej. notas de débito en OINV vía DocumentSubType).
+   */
+  baseFilter?: string;
+  /**
+   * Entidad lógica contra la que se valida el permiso RBAC. Si se omite, se usa
+   * el propio nombre de la entidad. Permite que vistas derivadas (notas de
+   * débito) reutilicen el permiso de su recurso base (Invoices/PurchaseInvoices).
+   */
+  permEntity?: string;
 }
 
 export const ENTITIES: Record<string, EntityMeta> = {
@@ -59,6 +71,8 @@ export const ENTITIES: Record<string, EntityMeta> = {
     keyIsString: false,
     defaultSelect: ["DocEntry", "DocNum", "CardCode", "CardName", "DocDate", "DocTotal", "DocumentStatus"],
     searchFields: ["CardCode", "CardName"],
+    // OINV contiene también las notas de débito; aquí mostramos solo facturas.
+    baseFilter: "DocumentSubType ne 'bod_DebitMemo'",
   },
   PurchaseOrders: {
     resource: "PurchaseOrders",
@@ -77,6 +91,7 @@ export const ENTITIES: Record<string, EntityMeta> = {
     keyIsString: false,
     defaultSelect: ["DocEntry", "DocNum", "CardCode", "CardName", "DocDate", "DocTotal", "DocumentStatus"],
     searchFields: ["CardCode", "CardName"],
+    baseFilter: "DocumentSubType ne 'bod_PurchaseDebitMemo'",
   },
   CreditNotes: {
     resource: "CreditNotes",
@@ -96,23 +111,31 @@ export const ENTITIES: Record<string, EntityMeta> = {
     defaultSelect: ["DocEntry", "DocNum", "CardCode", "CardName", "DocDate", "DocTotal", "DocumentStatus"],
     searchFields: ["CardCode", "CardName"],
   },
-  CorrectionInvoice: {
-    resource: "CorrectionInvoice",
-    label: "Notas de débito / factura de corrección (cliente)",
+  ARDebitMemos: {
+    resource: "Invoices",
+    label: "Notas de débito de cliente",
     kind: "salesDoc",
     keyField: "DocEntry",
     keyIsString: false,
     defaultSelect: ["DocEntry", "DocNum", "CardCode", "CardName", "DocDate", "DocTotal", "DocumentStatus"],
     searchFields: ["CardCode", "CardName"],
+    dateField: "DocDate",
+    // Las notas de débito de cliente viven en OINV (Invoices) marcadas con este subtipo.
+    baseFilter: "DocumentSubType eq 'bod_DebitMemo'",
+    permEntity: "Invoices",
   },
-  CorrectionPurchaseInvoice: {
-    resource: "CorrectionPurchaseInvoice",
-    label: "Notas de débito / factura de corrección (proveedor)",
+  APDebitMemos: {
+    resource: "PurchaseInvoices",
+    label: "Notas de débito de proveedor",
     kind: "purchaseDoc",
     keyField: "DocEntry",
     keyIsString: false,
     defaultSelect: ["DocEntry", "DocNum", "CardCode", "CardName", "DocDate", "DocTotal", "DocumentStatus"],
     searchFields: ["CardCode", "CardName"],
+    dateField: "DocDate",
+    // Las notas de débito de proveedor viven en OPCH (PurchaseInvoices).
+    baseFilter: "DocumentSubType eq 'bod_PurchaseDebitMemo'",
+    permEntity: "PurchaseInvoices",
   },
   IncomingPayments: {
     resource: "IncomingPayments",

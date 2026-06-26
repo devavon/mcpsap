@@ -2,6 +2,8 @@ import { readFileSync, existsSync, statSync } from "node:fs";
 import { resolve } from "node:path";
 import { config } from "../config.js";
 import type { CompaniesConfig, CompanyDef } from "../types.js";
+import { dbEnabled } from "../db/mysql.js";
+import { cachedCompanies } from "../db/repo.js";
 
 /**
  * Catálogo de empresas (CompanyDB) de SAP B1.
@@ -48,6 +50,8 @@ function buildDefault(): Record<string, CompanyDef> {
 }
 
 function load(): Record<string, CompanyDef> {
+  // 0) MySQL (fuente de verdad cuando hay DATABASE_URL).
+  if (dbEnabled()) return cachedCompanies();
   // 1) Variable de entorno COMPANIES_JSON (despliegues en la nube).
   if (process.env.COMPANIES_JSON) {
     if (!envCache) {

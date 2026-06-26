@@ -24,20 +24,11 @@ export function resolveCompany(user: UserContext): { alias: string; client: Retu
 }
 
 /** Construye el querystring OData a partir de parámetros de búsqueda. */
-function buildQuery(
-  entity: EntityMeta,
-  params: {
-    search?: string;
-    filter?: string;
-    top?: number;
-    skip?: number;
-    orderby?: string;
-    select?: string[];
-  },
-): string {
+function buildQuery(entity: EntityMeta, params: QueryParams): string {
   const parts: string[] = [];
   const filters: string[] = [];
 
+  if (entity.baseFilter) filters.push(`(${entity.baseFilter})`);
   if (params.filter) filters.push(`(${params.filter})`);
 
   if (params.search && entity.searchFields.length) {
@@ -56,35 +47,118 @@ function buildQuery(
 
   if (filters.length) parts.push(`$filter=${encodeURIComponent(filters.join(" and "))}`);
 
-  const select = params.select?.length ? params.select : entity.defaultSelect;
-  parts.push(`$select=${encodeURIComponent(select.join(","))}`);
-  parts.push(`$top=${Math.min(Math.max(params.top ?? 20, 1), 100)}`);
-  if (params.skip) parts.push(`$skip=${params.skip}`);
+  // Columnas: por defecto el $select de la entidad; con allColumns se omite el
+  // $select para que SAP devuelva TODOS los campos del registro.
+  if (!params.allColumns) {
+    const select = [...(params.select?.length ? params.select : entity.defaultSelect)];
+    // Asegura los campos de importe en ambas monedas para documentos.
+    const amt = docAmounts(entity);
+    if (amt) for (const f of [amt.currency, amt.local, amt.system]) if (!select.includes(f)) select.push(f);
+    parts.push(`$select=${encodeURIComponent([...new Set(select)].join(","))}`);
+  }
+  if (params.expand) parts.push(`$expand=${encodeURIComponent(params.expand)}`);
+
+  // Con all=true paginamos fuera de aquí (getAll), sin $top/$skip.
+  if (!params.all) {
+    parts.push(`$top=${Math.min(Math.max(params.top ?? 20, 1), 1000)}`);
+    if (params.skip) parts.push(`$skip=${params.skip}`);
+  }
   if (params.orderby) parts.push(`$orderby=${encodeURIComponent(params.orderby)}`);
 
   return parts.join("&");
 }
 
-/** Búsqueda/listado (requiere permiso read). */
-export async function searchEntity(
+export interface QueryParams {
+  search?: string;
+  filter?: string;
+  top?: number;
+  skip?: number;
+  orderby?: string;
+  select?: string[];
+  /** Trae TODAS las filas paginando (ignora top/skip). */
+  all?: boolean;
+  /** Omite $select para devolver todas las columnas. */
+  allColumns?: boolean;
+  /** $expand OData (p.ej. "JournalEntryLines"). */
+  expand?: string;
+}
+
+export interface QueryResult {
+  entity: string;
+  label: string;
+  company: string;
+  companyLabel: string;
+  rows: Record<string, unknown>[];
+  /** Orden sugerido de columnas (cuando se añaden columnas derivadas). */
+  columns?: string[];
+}
+
+/**
+ * Campos de importe por tipo de documento. En SAP B1 el total se guarda en
+ * moneda local (DocTotal = colones), de sistema (DocTotalSys = dólares) y de la
+ * propia moneda del documento (DocTotalFC). Devolvemos los tres separados.
+ */
+function docAmounts(entity: EntityMeta): { currency: string; local: string; system: string } | null {
+  if (entity.kind === "salesDoc" || entity.kind === "purchaseDoc") {
+    return { currency: "DocCurrency", local: "DocTotal", system: "DocTotalSys" };
+  }
+  return null;
+}
+
+/** "COL" -> "CRC" para mostrar; el resto tal cual (USD, EUR…). */
+function showCurrency(v: unknown): string {
+  const c = String(v ?? "").toUpperCase();
+  return c === "COL" ? "CRC" : c;
+}
+
+/** Ordena columnas: las preferidas presentes primero, luego el resto. */
+function orderColumns(rows: Record<string, unknown>[], preferred: string[]): string[] {
+  const seen = new Set<string>();
+  const cols: string[] = [];
+  const add = (k: string) => {
+    if (!seen.has(k) && !k.startsWith("odata.") && !k.includes("@")) {
+      seen.add(k);
+      cols.push(k);
+    }
+  };
+  for (const k of preferred) if (rows[0] && k in rows[0]) add(k);
+  for (const r of rows) for (const k of Object.keys(r)) add(k);
+  return cols;
+}
+
+/**
+ * Núcleo de lectura: valida permiso, resuelve empresa, consulta el Service
+ * Layer y devuelve las filas crudas + metadatos. Lo usan tanto las
+ * herramientas MCP (searchEntity) como la API REST del add-in de Excel.
+ */
+export async function queryEntityRows(
   user: UserContext,
   entityName: string,
-  params: {
-    search?: string;
-    filter?: string;
-    top?: number;
-    skip?: number;
-    orderby?: string;
-    select?: string[];
-  },
-): Promise<CallToolResult> {
+  params: QueryParams,
+): Promise<QueryResult> {
   const entity = getEntity(entityName);
-  assertPermission(user, entityName, "read");
+  assertPermission(user, entity.permEntity ?? entityName, "read");
   const { alias, client } = resolveCompany(user);
 
   const query = buildQuery(entity, params);
-  const res = await client.get<{ value: unknown[] }>(entity.resource, query);
-  const rows = res?.value ?? [];
+  const rows = params.all
+    ? await client.getAll<Record<string, unknown>>(entity.resource, query)
+    : (await client.get<{ value: Record<string, unknown>[] }>(entity.resource, query))?.value ?? [];
+
+  // Separación de monedas: para documentos, añade columnas claras Moneda / ₡ / $.
+  let columns: string[] | undefined;
+  const amt = docAmounts(entity);
+  if (amt && rows.length) {
+    for (const r of rows) {
+      r["Moneda doc."] = showCurrency(r[amt.currency]);
+      r["Total ₡ (CRC)"] = r[amt.local] ?? null;
+      r["Total $ (USD)"] = r[amt.system] ?? null;
+    }
+    columns = orderColumns(rows, [
+      entity.keyField, "DocNum", "DocDate", "CardCode", "CardName",
+      "Moneda doc.", "Total ₡ (CRC)", "Total $ (USD)", "DocumentStatus",
+    ]);
+  }
 
   audit({
     username: user.username,
@@ -97,7 +171,24 @@ export async function searchEntity(
     detail: `search=${params.search ?? ""} filter=${params.filter ?? ""} -> ${rows.length} filas`,
   });
 
-  return json(`${entity.label} — ${rows.length} resultado(s) [empresa: ${getCompany(alias).label}]:`, rows);
+  return {
+    entity: entityName,
+    label: entity.label,
+    company: alias,
+    companyLabel: getCompany(alias).label,
+    rows,
+    columns,
+  };
+}
+
+/** Búsqueda/listado (requiere permiso read). */
+export async function searchEntity(
+  user: UserContext,
+  entityName: string,
+  params: QueryParams,
+): Promise<CallToolResult> {
+  const r = await queryEntityRows(user, entityName, params);
+  return json(`${r.label} — ${r.rows.length} resultado(s) [empresa: ${r.companyLabel}]:`, r.rows);
 }
 
 /** Lectura de un registro por su clave (requiere permiso read). */

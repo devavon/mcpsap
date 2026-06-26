@@ -6,6 +6,7 @@ import { registerBusinessPartnerTools } from "./businessPartners.tools.js";
 import { registerDocumentTools } from "./documents.tools.js";
 import { registerReadOnlyTools } from "./readonly.tools.js";
 import { registerFinanceTools } from "./finance.tools.js";
+import { registerReportTools } from "./reports.tools.js";
 
 /** Registra TODAS las herramientas del MCP en el servidor dado. */
 export function registerAllTools(server: McpServer): void {
@@ -39,4 +40,7 @@ export function registerAllTools(server: McpServer): void {
 
   // Finanzas (solo lectura).
   registerFinanceTools(server);
+
+  // Reportes compuestos (solo lectura).
+  registerReportTools(server);
 }
