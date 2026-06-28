@@ -217,7 +217,22 @@ async function start() {
   // la plataforma).
   const keyPath = process.env.HTTPS_KEY;
   const certPath = process.env.HTTPS_CERT;
-  const useHttps = !!(keyPath && certPath);
+  // Carga los certs si ambas rutas existen. Si están definidas pero faltan los
+  // archivos (p.ej. rutas locales heredadas en la nube), NO crashea: avisa y
+  // sigue en HTTP (en Railway el TLS lo pone la plataforma).
+  let tls: { key: Buffer; cert: Buffer } | null = null;
+  if (keyPath && certPath) {
+    try {
+      const { readFileSync } = await import("node:fs");
+      tls = { key: readFileSync(keyPath), cert: readFileSync(certPath) };
+    } catch (e) {
+      console.error(
+        `[mcp-sap-b1] ⚠️ HTTPS_KEY/HTTPS_CERT definidos pero no se pudieron leer (${(e as Error).message}). ` +
+          `Arrancando en HTTP. En Railway/producción quite esas variables.`,
+      );
+    }
+  }
+  const useHttps = !!tls;
   const scheme = useHttps ? "https" : "http";
 
   const onListen = () => {
@@ -236,11 +251,10 @@ async function start() {
     }
   };
 
-  if (useHttps) {
+  if (tls) {
     const https = await import("node:https");
-    const { readFileSync } = await import("node:fs");
     httpServer = https
-      .createServer({ key: readFileSync(keyPath!), cert: readFileSync(certPath!) }, app)
+      .createServer(tls, app)
       .listen(config.server.port, config.server.host, onListen) as unknown as typeof httpServer;
   } else {
     httpServer = app.listen(config.server.port, config.server.host, onListen);
