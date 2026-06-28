@@ -60,7 +60,21 @@ app.use("/api", createRestRouter());
 // Sirve los archivos del add-in de Excel (taskpane, bundles, assets, manifest)
 // desde ./public, para alojar API + add-in en un mismo dominio (sin CORS).
 // La carpeta public/ se genera con `npm run dist` en el proyecto del add-in.
-app.use(express.static("public"));
+//
+// Caché: los bundles llevan hash en el nombre (…[contenthash].js) → se cachean
+// para siempre; el HTML, íconos y manifest se revalidan siempre, de modo que al
+// redesplegar los usuarios reciben la versión nueva sin limpiar caché.
+app.use(
+  express.static("public", {
+    setHeaders: (res, filePath) => {
+      const isHashedBundle = /\.[0-9a-f]{8,}\.(js|css)$/i.test(filePath);
+      res.setHeader(
+        "Cache-Control",
+        isHashedBundle ? "public, max-age=31536000, immutable" : "no-cache",
+      );
+    },
+  }),
+);
 
 // Protección por API key (opcional pero recomendada al exponer públicamente).
 // Acepta cabecera 'x-api-key' o 'Authorization: Bearer <key>'.
