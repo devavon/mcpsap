@@ -59,6 +59,16 @@ export const config = {
     // (fuente de verdad) y se habilita el panel /admin.
     url: optional("DATABASE_URL", ""),
   },
+  hana: {
+    // Conexión directa a SAP HANA para informes SQL (antigüedad CxC,
+    // obligaciones con pagos, etc.). Si HANA_HOST está vacío, se desactivan.
+    host: optional("HANA_HOST", ""),
+    port: intOpt("HANA_PORT", 30015),
+    user: optional("HANA_USER", ""),
+    password: optional("HANA_PASSWORD", ""),
+    encrypt: optional("HANA_ENCRYPT", "true").toLowerCase() !== "false",
+    sslValidate: optional("HANA_SSL_VALIDATE", "false").toLowerCase() === "true",
+  },
   admin: {
     // Usuario superadmin inicial para entrar al panel (se siembra si no existe).
     superUser: optional("SUPERADMIN_USERNAME", "superadmin"),

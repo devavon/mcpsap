@@ -10,6 +10,7 @@ import {
 import { getCompany } from "../sap/companies.js";
 import { ENTITIES, type EntityMeta } from "../sap/entities.js";
 import { REPORTS, getReport, type FilterDef } from "../sap/reports.js";
+import { runHanaQuery, hanaEnabled } from "../sap/hana.js";
 import { roleAllows, assertPermission } from "../auth/roles.js";
 import { PermissionError } from "../auth/roles.js";
 import { SapError } from "../sap/serviceLayer.js";
@@ -160,16 +161,19 @@ export function createRestRouter(): Router {
     });
 
     // Informes financieros: requieren lectura sobre la entidad lógica "Financials".
+    // Los informes SQL solo se listan si HANA está configurado.
     const reports = roleAllows(role, "Financials", "read")
-      ? Object.values(REPORTS).map((r) => ({
-          name: r.name,
-          label: r.label,
-          kind: r.kind,
-          type: "report" as const,
-          description: r.description,
-          filters: r.filters,
-          supportsAll: false,
-        }))
+      ? Object.values(REPORTS)
+          .filter((r) => r.run || (r.sql && hanaEnabled()))
+          .map((r) => ({
+            name: r.name,
+            label: r.label,
+            kind: r.kind,
+            type: "report" as const,
+            description: r.description,
+            filters: r.filters,
+            supportsAll: false,
+          }))
       : [];
 
     res.json({ entities: [...reports, ...entities] });
@@ -193,7 +197,21 @@ export function createRestRouter(): Router {
           }
         }
         const { alias, client } = resolveCompany(req.user!);
-        const out = await report.run(client, flt);
+
+        let rows: Record<string, unknown>[];
+        let columns: string[] | null = null;
+        if (report.sql) {
+          // Informe SQL directo a HANA, sobre el esquema (CompanyDB) de la empresa.
+          const companyDB = getCompany(alias).companyDB;
+          const { text, params } = report.sql(flt);
+          rows = await runHanaQuery(companyDB, text, params);
+          columns = rows.length ? Object.keys(rows[0]) : null;
+        } else {
+          const out = await report.run!(client, flt);
+          rows = out.rows;
+          columns = out.columns ?? null;
+        }
+
         audit({
           username: req.user!.username,
           role: req.user!.role,
@@ -202,15 +220,15 @@ export function createRestRouter(): Router {
           entity: "Financials",
           operation: "read",
           outcome: "ok",
-          detail: `${JSON.stringify(flt)} -> ${out.rows.length} filas`,
+          detail: `${JSON.stringify(flt)} -> ${rows.length} filas`,
         });
         return void res.json({
           entity: name,
           label: report.label,
           company: alias,
           companyLabel: getCompany(alias).label,
-          rows: out.rows,
-          columns: out.columns ?? null,
+          rows,
+          columns,
         });
       }
 

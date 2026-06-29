@@ -3,7 +3,7 @@
 # ============================================================
 
 # --- Etapa 1: build (compila TypeScript a dist/) ---
-FROM node:22-alpine AS build
+FROM node:22-bookworm-slim AS build
 WORKDIR /app
 
 # Instala TODAS las dependencias (incluidas dev) para poder compilar.
@@ -16,7 +16,7 @@ COPY src ./src
 RUN npm run build
 
 # --- Etapa 2: runtime (solo lo necesario para ejecutar) ---
-FROM node:22-alpine AS runtime
+FROM node:22-bookworm-slim AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
 

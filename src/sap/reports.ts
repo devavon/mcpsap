@@ -37,7 +37,14 @@ export interface ReportDef {
   kind: "journal" | "payment" | "master" | "salesDoc" | "purchaseDoc";
   description: string;
   filters: FilterDef[];
-  run: (client: ServiceLayerClient, f: Record<string, string>) => Promise<ReportResult>;
+  /** Informe basado en Service Layer (opcional si usa SQL). */
+  run?: (client: ServiceLayerClient, f: Record<string, string>) => Promise<ReportResult>;
+  /**
+   * Informe basado en SQL directo a HANA: devuelve el SQL parametrizado (con
+   * '?') y los parámetros en orden. Se ejecuta sobre el esquema de la empresa
+   * seleccionada. Requiere HANA configurado.
+   */
+  sql?: (f: Record<string, string>) => { text: string; params: any[] };
 }
 
 const num = (v: unknown) => (typeof v === "number" ? v : parseFloat(String(v ?? 0)) || 0);
@@ -502,6 +509,67 @@ export const REPORTS: Record<string, ReportDef> = {
       { ...dateTo, required: true },
     ],
     run: trialBalance,
+  },
+  AntiguedadCxC: {
+    name: "AntiguedadCxC",
+    label: "Antigüedad cuentas por cobrar (₡ y $)",
+    kind: "master",
+    description:
+      "Por cliente: facturas, notas de crédito, pagos/adelantos y pendiente, en colones y dólares (SQL directo a HANA).",
+    filters: [
+      { ...dateFrom, required: true },
+      { ...dateTo, required: true },
+    ],
+    sql: (f) => ({
+      text: `
+SELECT
+    X."CardCode"                                                       AS "Código",
+    X."CardName"                                                       AS "Cliente",
+    SUM(CASE WHEN X."Tipo" = 'Factura'       THEN  X."OrigUSD" END)    AS "Fact DOL.",
+    SUM(CASE WHEN X."Tipo" = 'Nota Crédito'  THEN -X."OrigUSD" END)    AS "NC DOL.",
+    SUM(CASE WHEN X."Tipo" = 'Pago/Adelanto' THEN -X."OrigUSD" END)    AS "Pago DOL.",
+    SUM(X."PendUSD")                                                   AS "Pend. DOL.",
+    SUM(CASE WHEN X."Tipo" = 'Factura'       THEN  X."OrigCRC" END)    AS "Fact CRC",
+    SUM(CASE WHEN X."Tipo" = 'Nota Crédito'  THEN -X."OrigCRC" END)    AS "NC CRC",
+    SUM(CASE WHEN X."Tipo" = 'Pago/Adelanto' THEN -X."OrigCRC" END)    AS "Pago CRC",
+    SUM(X."PendCRC")                                                   AS "Pend. CRC"
+FROM (
+        SELECT
+            T0."CardCode", T0."CardName", 'Factura' AS "Tipo",
+            T0."DocDate" AS "Fecha",
+            CASE WHEN T0."DocCur" = 'USD' THEN NULL ELSE T0."DocTotal" END                       AS "OrigCRC",
+            CASE WHEN T0."DocCur" = 'USD' THEN T0."DocTotalFC" ELSE NULL END                     AS "OrigUSD",
+            CASE WHEN T0."DocCur" = 'USD' THEN NULL ELSE (T0."DocTotal" - T0."PaidToDate") END   AS "PendCRC",
+            CASE WHEN T0."DocCur" = 'USD' THEN (T0."DocTotalFC" - T0."PaidFC") ELSE NULL END     AS "PendUSD"
+        FROM OINV T0
+        WHERE T0."CANCELED" = 'N'
+        UNION ALL
+        SELECT
+            T1."CardCode", T1."CardName", 'Nota Crédito',
+            T1."DocDate",
+            CASE WHEN T1."DocCur" = 'USD' THEN NULL ELSE -1 * T1."DocTotal" END,
+            CASE WHEN T1."DocCur" = 'USD' THEN -1 * T1."DocTotalFC" ELSE NULL END,
+            CASE WHEN T1."DocCur" = 'USD' THEN NULL ELSE -1 * (T1."DocTotal" - T1."PaidToDate") END,
+            CASE WHEN T1."DocCur" = 'USD' THEN -1 * (T1."DocTotalFC" - T1."PaidFC") ELSE NULL END
+        FROM ORIN T1
+        WHERE T1."CANCELED" = 'N'
+        UNION ALL
+        SELECT
+            T2."CardCode", T2."CardName", 'Pago/Adelanto',
+            T2."DocDate",
+            CASE WHEN T3."FCCurrency" = 'USD' THEN NULL ELSE -1 * T3."Credit" END,
+            CASE WHEN T3."FCCurrency" = 'USD' THEN -1 * T3."FCCredit" ELSE NULL END,
+            CASE WHEN T3."FCCurrency" = 'USD' THEN NULL ELSE -1 * T3."BalDueCred" END,
+            CASE WHEN T3."FCCurrency" = 'USD' THEN -1 * T3."BalFcCred" ELSE NULL END
+        FROM ORCT T2
+        INNER JOIN JDT1 T3 ON T3."TransId" = T2."TransId" AND T3."ShortName" = T2."CardCode"
+        WHERE T2."Canceled" = 'N' AND T2."DocType" = 'C'
+) X
+WHERE X."Fecha" >= ? AND X."Fecha" <= ?
+GROUP BY X."CardCode", X."CardName"
+ORDER BY X."CardName"`,
+      params: [f.dateFrom, f.dateTo],
+    }),
   },
   EstadoObligaciones: {
     name: "EstadoObligaciones",
