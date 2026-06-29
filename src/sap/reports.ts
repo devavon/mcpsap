@@ -105,6 +105,7 @@ interface JeLine {
   DueDate?: string;
   LineMemo?: string;
   Reference1?: string;
+  Reference2?: string;
   ContraAccount?: string;
 }
 interface JournalEntry {
@@ -149,6 +150,64 @@ async function accountNames(client: ServiceLayerClient): Promise<Map<string, str
   const m = new Map<string, string>();
   for (const a of coa) if (a.Code) m.set(a.Code, a.Name ?? "");
   return m;
+}
+
+/** Mapa CardCode -> Nombre del socio (para la contrapartida del asiento). */
+async function partnerNames(client: ServiceLayerClient): Promise<Map<string, string>> {
+  const bp = await client.getAll<{ CardCode?: string; CardName?: string }>(
+    "BusinessPartners",
+    `$select=CardCode,CardName`,
+  );
+  const m = new Map<string, string>();
+  for (const b of bp) if (b.CardCode) m.set(b.CardCode, b.CardName ?? "");
+  return m;
+}
+
+/**
+ * Movimientos SAP: todas las líneas de asientos del periodo (equivalente al
+ * query OJDT+JDT1+OACT+OCRD), con entradas/salidas en USD (FCDebit/FCCredit,
+ * moneda extranjera del asiento) y en colones (Debit/Credit, moneda local).
+ */
+async function movimientosSAP(client: ServiceLayerClient, f: Record<string, string>): Promise<ReportResult> {
+  const [jes, accNames, bpN] = await Promise.all([
+    fetchJournal(client, f.dateFrom, f.dateTo),
+    accountNames(client),
+    partnerNames(client),
+  ]);
+
+  const rows: Record<string, unknown>[] = [];
+  for (const je of jes) {
+    for (const l of je.JournalEntryLines ?? []) {
+      const memo = l.LineMemo && l.LineMemo.trim() !== "" ? l.LineMemo : je.Memo;
+      const contra = l.ContraAccount ?? "";
+      const isBP = bpN.has(contra);
+      rows.push({
+        FechaSAP: je.ReferenceDate,
+        Documento: je.Reference ?? null,
+        Concepto: memo ?? null,
+        Cuenta: l.AccountCode,
+        NombreCuenta: accNames.get(l.AccountCode ?? "") ?? l.ShortName ?? "",
+        CodigoSocio: isBP ? contra : "",
+        NombreSocio: isBP ? bpN.get(contra) ?? "" : "",
+        Referencia1: l.Reference1 ?? "",
+        Referencia2: l.Reference2 ?? "",
+        Referencia3: (l as Record<string, unknown>).Reference3 ?? "",
+        "Entrada USD": num(l.FCDebit) > 0 ? round2(num(l.FCDebit)) : 0,
+        "Salida USD": num(l.FCCredit) > 0 ? round2(num(l.FCCredit)) : 0,
+        "Entrada COL": num(l.Debit) > 0 ? round2(num(l.Debit)) : 0,
+        "Salida COL": num(l.Credit) > 0 ? round2(num(l.Credit)) : 0,
+      });
+    }
+  }
+
+  return {
+    rows,
+    columns: [
+      "FechaSAP", "Documento", "Concepto", "Cuenta", "NombreCuenta",
+      "CodigoSocio", "NombreSocio", "Referencia1", "Referencia2", "Referencia3",
+      "Entrada USD", "Salida USD", "Entrada COL", "Salida COL",
+    ],
+  };
 }
 
 // ----------------------- Mayor / Libro mayor -----------------------
@@ -329,6 +388,18 @@ export const REPORTS: Record<string, ReportDef> = {
       dateTo,
     ],
     run: generalLedger,
+  },
+  MovimientosSAP: {
+    name: "MovimientosSAP",
+    label: "Movimientos SAP (asientos detallados ₡ y $)",
+    kind: "journal",
+    description:
+      "Todas las líneas de asientos del periodo: cuenta, socio (contrapartida) y entradas/salidas en USD (moneda extranjera) y colones.",
+    filters: [
+      { ...dateFrom, required: true },
+      { ...dateTo, required: true },
+    ],
+    run: movimientosSAP,
   },
   TrialBalance: {
     name: "TrialBalance",
