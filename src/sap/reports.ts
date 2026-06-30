@@ -170,99 +170,6 @@ async function partnerNames(client: ServiceLayerClient): Promise<Map<string, str
   return m;
 }
 
-/** Mapa CenterCode -> Nombre del centro de costo (OOCR). */
-async function profitCenterNames(client: ServiceLayerClient): Promise<Map<string, string>> {
-  const cc = await client.getAll<{ CenterCode?: string; CenterName?: string }>(
-    "ProfitCenters",
-    `$select=CenterCode,CenterName`,
-  );
-  const m = new Map<string, string>();
-  for (const c of cc) if (c.CenterCode) m.set(c.CenterCode, c.CenterName ?? "");
-  return m;
-}
-
-interface PurchaseDoc {
-  DocEntry?: number;
-  DocNum?: number;
-  Comments?: string;
-  CardCode?: string;
-  CardName?: string;
-  DocDueDate?: string;
-  DocCurrency?: string;
-  NumAtCard?: string;
-  DocTotal?: number;
-  DocTotalFc?: number;
-  DocTotalSys?: number;
-  PaidToDate?: number;
-  PaidToDateSys?: number;
-  DocumentLines?: { CostingCode?: string }[];
-}
-
-/**
- * Estado de obligaciones: facturas de compra ABIERTAS (cuentas por pagar), con
- * total y pendiente separados en colones y dólares (en negativo, como el query
- * original), y una fila por cada centro de costo presente en las líneas.
- *
- * NOTA: la parte de pagos a cuenta (OVPM con saldo) del query original no se
- * incluye porque el Service Layer no expone DocTotal/DocTotalFC/OpenBal de los
- * pagos. Si se requiere, habría que leerlo por HANA directo o una User Query.
- */
-async function estadoObligaciones(client: ServiceLayerClient, f: Record<string, string>): Promise<ReportResult> {
-  const filters = ["DocumentStatus eq 'bost_Open'"];
-  if (f.cardCode) filters.push(`CardCode eq '${String(f.cardCode).replace(/'/g, "''")}'`);
-  if (f.dateFrom) filters.push(`DocDate ge '${f.dateFrom}'`);
-  if (f.dateTo) filters.push(`DocDate le '${f.dateTo}'`);
-  const q =
-    `$select=DocEntry,DocNum,Comments,CardCode,CardName,DocDueDate,DocCurrency,NumAtCard,` +
-    `DocTotal,DocTotalFc,DocTotalSys,PaidToDate,PaidToDateSys,DocumentLines` +
-    `&$filter=${encodeURIComponent(filters.join(" and "))}&$orderby=CardCode`;
-
-  const [docs, centers] = await Promise.all([
-    client.getAll<PurchaseDoc>("PurchaseInvoices", q),
-    profitCenterNames(client),
-  ]);
-
-  const rows: Record<string, unknown>[] = [];
-  for (const d of docs) {
-    const isUSD = d.DocCurrency === "USD";
-    const total = num(d.DocTotal);
-    const totalFc = num(d.DocTotalFc);
-    const pendCol = total - num(d.PaidToDate);
-    const pendDol = num(d.DocTotalSys) - num(d.PaidToDateSys);
-    // Centros de costo distintos de las líneas (solo los que existen en OOCR).
-    const ccs = [
-      ...new Set((d.DocumentLines ?? []).map((l) => l.CostingCode).filter((cc): cc is string => !!cc && centers.has(cc))),
-    ];
-    // INNER JOIN OOCR: si no hay centro de costo, no aparece (igual que el query).
-    for (const cc of ccs) {
-      rows.push({
-        "# Documento": d.DocNum,
-        Detalle: d.Comments ?? "",
-        "Codigo Proveedor": d.CardCode,
-        "Nombre Proveedor": d.CardName,
-        "Fecha Vencimiento": d.DocDueDate,
-        Moneda: d.DocCurrency,
-        Documento: d.NumAtCard ?? "",
-        "Total Colones": isUSD ? 0 : round2(total * -1),
-        "Total Dólares": isUSD ? round2(totalFc * -1) : 0,
-        "Pendiente Colones": isUSD ? 0 : round2(pendCol * -1),
-        "Pendiente Dólares": isUSD ? round2(pendDol * -1) : 0,
-        "Centro Costo": centers.get(cc) ?? "",
-        "Tipo Documento": "Factura",
-      });
-    }
-  }
-
-  return {
-    rows,
-    columns: [
-      "# Documento", "Detalle", "Codigo Proveedor", "Nombre Proveedor", "Fecha Vencimiento",
-      "Moneda", "Documento", "Total Colones", "Total Dólares", "Pendiente Colones",
-      "Pendiente Dólares", "Centro Costo", "Tipo Documento",
-    ],
-  };
-}
-
 /**
  * Movimientos SAP: todas las líneas de asientos del periodo (equivalente al
  * query OJDT+JDT1+OACT+OCRD), con entradas/salidas en USD (FCDebit/FCCredit,
@@ -670,13 +577,70 @@ ORDER BY O."CardName"`,
     label: "Estado de obligaciones (cuentas por pagar)",
     kind: "purchaseDoc",
     description:
-      "Facturas de compra abiertas con total y pendiente en colones y dólares, por centro de costo. (No incluye pagos a cuenta: el Service Layer no expone su saldo.)",
+      "Facturas de compra abiertas + pagos/adelantos a cuenta, con total y pendiente en colones y dólares, por centro de costo (SQL directo a HANA).",
     filters: [
       { key: "cardCode", label: "Proveedor (CardCode)", type: "text", placeholder: "opcional" },
       dateFrom,
       dateTo,
     ],
-    run: estadoObligaciones,
+    sql: (f) => {
+      const opch = [`T0."DocStatus" <> 'C'`];
+      const ovpm = [`T99."Canceled" = 'N'`, `T99."OpenBal" > 0`];
+      const params: any[] = [];
+      // Mismos filtros en ambas partes del UNION (en el mismo orden que aparecen).
+      if (f.cardCode) opch.push(`T0."CardCode" = ?`);
+      if (f.dateFrom) opch.push(`T0."DocDate" >= ?`);
+      if (f.dateTo) opch.push(`T0."DocDate" <= ?`);
+      if (f.cardCode) params.push(f.cardCode);
+      if (f.dateFrom) params.push(f.dateFrom);
+      if (f.dateTo) params.push(f.dateTo);
+      if (f.cardCode) ovpm.push(`T99."CardCode" = ?`);
+      if (f.dateFrom) ovpm.push(`T99."DocDate" >= ?`);
+      if (f.dateTo) ovpm.push(`T99."DocDate" <= ?`);
+      if (f.cardCode) params.push(f.cardCode);
+      if (f.dateFrom) params.push(f.dateFrom);
+      if (f.dateTo) params.push(f.dateTo);
+      const text = `
+SELECT DISTINCT
+  T0."DocEntry" AS "DocEntry",
+  T0."DocNum" AS "# Documento",
+  T0."Comments" AS "Detalle",
+  T0."CardCode" AS "Codigo Proveedor",
+  T0."CardName" AS "Nombre Proveedor",
+  TO_VARCHAR(T0."DocDueDate",'YYYY-MM-DD') AS "Fecha Vencimiento",
+  T0."DocCur" AS "Moneda",
+  T0."NumAtCard" AS "Documento",
+  CASE WHEN T0."DocCur"='USD' THEN 0 WHEN T0."DocCur"='COL' THEN T0."DocTotal"*-1 END AS "Total Colones",
+  CASE WHEN T0."DocCur"='USD' THEN T0."DocTotalFC"*-1 WHEN T0."DocCur"='COL' THEN 0 END AS "Total Dólares",
+  CASE WHEN T0."DocCur"='USD' THEN 0 WHEN T0."DocCur"='COL' THEN (T0."DocTotal"-T0."PaidToDate")*-1 END AS "Pendiente Colones",
+  CASE WHEN T0."DocCur"='USD' THEN (T0."DocTotalSy"-T0."PaidSys")*-1 WHEN T0."DocCur"='COL' THEN 0 END AS "Pendiente Dólares",
+  T2."OcrName" AS "Centro Costo",
+  'Factura' AS "Tipo Documento"
+FROM OPCH T0
+INNER JOIN PCH1 T1 ON T0."DocEntry"=T1."DocEntry"
+INNER JOIN OOCR T2 ON T1."OcrCode"=T2."OcrCode"
+WHERE ${opch.join(" AND ")}
+UNION ALL
+SELECT
+  T99."DocEntry",
+  T99."DocNum",
+  T99."Comments",
+  T99."CardCode",
+  T99."CardName",
+  TO_VARCHAR(T99."DocDueDate",'YYYY-MM-DD'),
+  T99."DocCurr",
+  '',
+  CASE WHEN T99."DocCurr"='USD' THEN 0 WHEN T99."DocCurr"='COL' THEN T99."DocTotal" END,
+  CASE WHEN T99."DocCurr"='USD' THEN T99."DocTotalFC" WHEN T99."DocCurr"='COL' THEN 0 END,
+  0,
+  0,
+  '',
+  'Pago'
+FROM OVPM T99
+WHERE ${ovpm.join(" AND ")}
+ORDER BY "Codigo Proveedor"`;
+      return { text, params };
+    },
   },
   PartnerAging: {
     name: "PartnerAging",
