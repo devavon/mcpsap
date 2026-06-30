@@ -510,12 +510,12 @@ ORDER BY M."Cuenta", M."ord", M."Nº Trans.", M."Line"`,
       params: [f.dateFrom, f.dateFrom, f.dateTo, f.cuentaDesde || "", f.cuentaHasta || "ZZZZZZZZZZ"],
     }),
   },
-  LibroVentas: {
-    name: "LibroVentas",
-    label: "Libro de ventas",
-    kind: "salesDoc",
+  LibroCompras: {
+    name: "LibroCompras",
+    label: "Libro de compras",
+    kind: "purchaseDoc",
     description:
-      "Detalle por línea de facturas y notas de crédito (con grupo de socio, centro de costo, impuesto y cuenta), en colones y dólares, por rango de fechas.",
+      "Detalle por línea de facturas y notas de crédito de proveedor (con grupo de socio, centro de costo, impuesto y cuenta), en colones y dólares, por rango de fechas.",
     filters: [
       { ...dateFrom, required: true },
       { ...dateTo, required: true },
