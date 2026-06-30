@@ -25,6 +25,15 @@ function intOpt(name: string, fallback: number): number {
   return Number.isFinite(n) ? n : fallback;
 }
 
+/** Hostname del servidor del Service Layer (para reutilizarlo como host de HANA). */
+function slHostname(): string {
+  try {
+    return new URL(optional("SAP_SL_URL", "")).hostname;
+  } catch {
+    return "";
+  }
+}
+
 export const config = {
   sap: {
     url: required("SAP_SL_URL").replace(/\/+$/, ""),
@@ -61,8 +70,10 @@ export const config = {
   },
   hana: {
     // Conexión directa a SAP HANA para informes SQL (antigüedad CxC,
-    // obligaciones con pagos, etc.). Si HANA_HOST está vacío, se desactivan.
-    host: optional("HANA_HOST", ""),
+    // obligaciones con pagos, etc.). El HOST por defecto se toma del mismo
+    // servidor del Service Layer (SAP_SL_URL); basta definir HANA_USER y
+    // HANA_PASSWORD (el usuario de HANA es distinto al de B1). Puerto 30015.
+    host: optional("HANA_HOST", "") || slHostname(),
     port: intOpt("HANA_PORT", 30015),
     user: optional("HANA_USER", ""),
     password: optional("HANA_PASSWORD", ""),

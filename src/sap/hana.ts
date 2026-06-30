@@ -15,7 +15,9 @@ import { config } from "../config.js";
  */
 
 export function hanaEnabled(): boolean {
-  return !!config.hana.host;
+  // El host se hereda del Service Layer; lo que realmente hay que definir es el
+  // usuario y la clave de HANA (distintos a los de B1).
+  return !!(config.hana.host && config.hana.user && config.hana.password);
 }
 
 export class HanaError extends Error {}
