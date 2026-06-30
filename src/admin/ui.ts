@@ -53,6 +53,23 @@ export function esc(s: unknown): string {
     .replace(/"/g, "&quot;");
 }
 
+/**
+ * Barra con buscador instantáneo (filtra filas de la tabla en el cliente) +
+ * contador de resultados y, opcionalmente, acciones a la derecha (botón "Nuevo").
+ * `tableSel` es el selector de la tabla a filtrar (p.ej. "#tbl").
+ */
+export function searchBar(tableSel: string, placeholder: string, rightHtml = ""): string {
+  const icon =
+    '<svg width="17" height="17" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><circle cx="8.5" cy="8.5" r="5"/><path d="M12.5 12.5l4 4"/></svg>';
+  return `<div class="toolbar">
+    <div class="search">${icon}<input type="search" placeholder="${esc(placeholder)}" autocomplete="off"
+       data-table-filter="${esc(tableSel)}" data-count="#searchCount" aria-label="Buscar"/></div>
+    <span class="count" id="searchCount"></span>
+    <span class="spacer"></span>
+    ${rightHtml}
+  </div>`;
+}
+
 /** Renderiza una página completa con navegación. */
 export function page(title: string, body: string, admin?: string | null): string {
   const nav = admin
@@ -123,10 +140,18 @@ export function page(title: string, body: string, admin?: string | null): string
   table{width:100%;border-collapse:separate;border-spacing:0;background:var(--surface);
         border:1px solid var(--bd);border-radius:var(--r);overflow:hidden;box-shadow:var(--sh)}
   th,td{padding:11px 14px;border-bottom:1px solid var(--bd);text-align:left;font-size:13px;vertical-align:middle}
-  thead th{background:#f5f7f9;font-weight:600;color:var(--muted);text-transform:uppercase;font-size:11px;letter-spacing:.4px;position:sticky;top:58px}
-  tbody tr{transition:background .1s}
-  tbody tr:hover{background:#f7faf8}
-  tbody tr:last-child td{border-bottom:none}
+  th{background:#f5f7f9;font-weight:600;color:var(--muted);text-transform:uppercase;font-size:11px;letter-spacing:.4px;position:sticky;top:58px}
+  tr:hover td{background:#f7faf8}
+  tr:last-child td{border-bottom:none}
+  .no-results td{color:var(--muted);text-align:center;padding:22px}
+
+  /* ---- Toolbar / buscador ---- */
+  .toolbar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:16px 0}
+  .toolbar .search{position:relative;flex:1;min-width:220px;max-width:380px}
+  .toolbar .search input{padding-left:36px}
+  .toolbar .search svg{position:absolute;left:11px;top:50%;transform:translateY(-50%);color:var(--muted-2);pointer-events:none}
+  .toolbar .count{color:var(--muted);font-size:12.5px;white-space:nowrap}
+  .toolbar .spacer{flex:1}
 
   /* ---- Forms ---- */
   label{display:block;font-size:12.5px;margin:12px 0 5px;font-weight:600;color:var(--muted)}
@@ -160,7 +185,28 @@ export function page(title: string, body: string, admin?: string | null): string
 <script>
   (function(){var p=location.pathname.replace(/\\/$/,"")||"/admin";
    document.querySelectorAll('nav .links a').forEach(function(a){
-     if(a.getAttribute('href')===p)a.classList.add('active');});})();
+     if(a.getAttribute('href')===p)a.classList.add('active');});
+   // Buscador instantáneo de tablas
+   document.querySelectorAll('input[data-table-filter]').forEach(function(inp){
+     var tbl=document.querySelector(inp.getAttribute('data-table-filter'));
+     if(!tbl)return;
+     var cntSel=inp.getAttribute('data-count');
+     var cnt=cntSel?document.querySelector(cntSel):null;
+     var dataRows=Array.prototype.filter.call(tbl.rows,function(r){return !r.querySelector('th')});
+     var empty=null;
+     function run(){
+       var q=inp.value.trim().toLowerCase(), shown=0;
+       dataRows.forEach(function(r){
+         var m=!q||r.textContent.toLowerCase().indexOf(q)>-1;
+         r.style.display=m?'':'none'; if(m)shown++;
+       });
+       if(cnt)cnt.textContent=shown+(shown===1?' resultado':' resultados');
+       if(shown===0){ if(!empty){empty=tbl.insertRow(-1);empty.className='no-results';
+         var td=empty.insertCell(0);td.colSpan=20;td.textContent='Sin coincidencias';}
+         empty.style.display=''; } else if(empty){empty.style.display='none';}
+     }
+     inp.addEventListener('input',run); run();
+   });})();
 </script>
 </body></html>`;
 }

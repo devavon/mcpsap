@@ -9,7 +9,7 @@ import {
   queryAudit, cachedUsers,
 } from "../db/repo.js";
 import { audit } from "../audit/logger.js";
-import { page, esc, createSession, destroySession, currentAdmin } from "./ui.js";
+import { page, esc, searchBar, createSession, destroySession, currentAdmin } from "./ui.js";
 
 /** Entidades disponibles para asignar permisos en roles. */
 const ALL_ENTITIES = [...Object.keys(ENTITIES), "Financials"];
@@ -93,8 +93,9 @@ export function createAdminRouter(): express.Router {
         </td>
       </tr>`).join("");
     res.send(page("Usuarios", `
-      <h1>Usuarios</h1><a class="btn" href="/admin/users/new">+ Nuevo usuario</a>
-      <table style="margin-top:14px"><tr><th>Usuario</th><th>Rol</th><th>Empresas</th><th>Activo</th><th></th></tr>${rows}</table>`, admin));
+      <h1>Usuarios</h1>
+      ${searchBar("#tbl", "Buscar por usuario, rol o empresa…", '<a class="btn" href="/admin/users/new">+ Nuevo usuario</a>')}
+      <table id="tbl"><tr><th>Usuario</th><th>Rol</th><th>Empresas</th><th>Activo</th><th></th></tr>${rows}</table>`, admin));
   });
 
   r.get("/users/new", guard, (req, res) => {
@@ -143,8 +144,9 @@ export function createAdminRouter(): express.Router {
         </td>
       </tr>`).join("");
     res.send(page("Roles", `
-      <h1>Roles</h1><a class="btn" href="/admin/roles/new">+ Nuevo rol</a>
-      <table style="margin-top:14px"><tr><th>Rol</th><th>Permisos</th><th></th></tr>${rows}</table>`, admin));
+      <h1>Roles</h1>
+      ${searchBar("#tbl", "Buscar rol o permiso…", '<a class="btn" href="/admin/roles/new">+ Nuevo rol</a>')}
+      <table id="tbl"><tr><th>Rol</th><th>Permisos</th><th></th></tr>${rows}</table>`, admin));
   });
 
   r.get("/roles/new", guard, (req, res) => res.send(page("Nuevo rol", roleForm(null), (req as any).admin)));
@@ -185,8 +187,9 @@ export function createAdminRouter(): express.Router {
           <form method="post" action="/admin/companies/${encodeURIComponent(c.alias)}/delete" onsubmit="return confirm('¿Eliminar ${esc(c.alias)}?')"><button class="danger">Eliminar</button></form>
         </td></tr>`).join("");
     res.send(page("Empresas", `
-      <h1>Empresas</h1><a class="btn" href="/admin/companies/new">+ Nueva empresa</a>
-      <table style="margin-top:14px"><tr><th>Alias</th><th>Nombre</th><th>CompanyDB</th><th></th></tr>${rows}</table>`, admin));
+      <h1>Empresas</h1>
+      ${searchBar("#tbl", "Buscar por alias, nombre o CompanyDB…", '<a class="btn" href="/admin/companies/new">+ Nueva empresa</a>')}
+      <table id="tbl"><tr><th>Alias</th><th>Nombre</th><th>CompanyDB</th><th></th></tr>${rows}</table>`, admin));
   });
 
   r.get("/companies/new", guard, (req, res) => res.send(page("Nueva empresa", companyForm(null), (req as any).admin)));
