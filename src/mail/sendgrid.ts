@@ -73,12 +73,8 @@ export function credentialsEmail(opts: {
   fullName?: string;
   username: string;
   password: string;
-  appUrl?: string;
 }): { subject: string; html: string } {
   const saludo = opts.fullName ? `Hola ${esc(opts.fullName)},` : "Hola,";
-  const urlBlock = opts.appUrl
-    ? `<p>Servidor del complemento: <a href="${esc(opts.appUrl)}">${esc(opts.appUrl)}</a></p>`
-    : "";
   const html = `
   <div style="font-family:Segoe UI,Arial,sans-serif;color:#1f2933;max-width:520px;margin:auto">
     <div style="background:#1b5e20;color:#fff;padding:16px 20px;border-radius:10px 10px 0 0">
@@ -93,8 +89,9 @@ export function credentialsEmail(opts: {
         <tr><td style="padding:6px 12px;color:#6b7785">Contraseña</td>
             <td style="padding:6px 12px;font-weight:700;font-family:monospace">${esc(opts.password)}</td></tr>
       </table>
-      ${urlBlock}
-      <p style="color:#6b7785;font-size:13px">Por seguridad, guarda esta contraseña en un lugar seguro. Si necesitas un cambio, contacta al administrador.</p>
+      <p style="margin:14px 0 4px"><strong>Cómo usarlo:</strong></p>
+      <p style="margin:0;color:#374151">Abre <b>Excel</b> → pestaña <b>Inicio</b> → grupo <b>SAP B1</b> → <b>Consultar SAP</b>, e inicia sesión con estas credenciales.</p>
+      <p style="color:#6b7785;font-size:13px;margin-top:16px">Por seguridad, guarda esta contraseña en un lugar seguro. Si necesitas un cambio, contacta al administrador.</p>
     </div>
   </div>`;
   return { subject: "Tus credenciales de acceso — SAP B1", html };

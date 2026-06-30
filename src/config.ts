@@ -90,8 +90,6 @@ export const config = {
     sendgridKey: optional("SENDGRID_API_KEY", ""),
     from: optional("MAIL_FROM", ""),
     fromName: optional("MAIL_FROM_NAME", "SAP B1"),
-    // URL pública donde el usuario usa el add-in (se incluye en el correo).
-    appUrl: optional("APP_URL", "").replace(/\/+$/, ""),
   },
   audit: {
     dir: optional("AUDIT_DIR", "./audit-logs"),

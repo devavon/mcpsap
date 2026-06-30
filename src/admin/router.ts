@@ -9,7 +9,6 @@ import {
   queryAudit, cachedUsers,
 } from "../db/repo.js";
 import { audit } from "../audit/logger.js";
-import { config } from "../config.js";
 import { sendMail, mailEnabled, generatePassword, credentialsEmail } from "../mail/sendgrid.js";
 import { page, esc, searchBar, createSession, destroySession, currentAdmin } from "./ui.js";
 
@@ -149,7 +148,7 @@ export function createAdminRouter(): express.Router {
         flash = "mailoff";
       } else {
         try {
-          const { subject, html } = credentialsEmail({ fullName, username, password, appUrl: config.mail.appUrl || undefined });
+          const { subject, html } = credentialsEmail({ fullName, username, password });
           await sendMail({ to: email, subject, html });
           audit({ username: admin, role: "superadmin", action: "admin:user-credentials-sent", outcome: "ok", target: username, detail: `a ${email}` });
           flash = "sent";
