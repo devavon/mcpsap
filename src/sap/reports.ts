@@ -510,6 +510,21 @@ ORDER BY M."Cuenta", M."ord", M."Nº Trans.", M."Line"`,
       params: [f.dateFrom, f.dateFrom, f.dateTo, f.cuentaDesde || "", f.cuentaHasta || "ZZZZZZZZZZ"],
     }),
   },
+  FlujoCaja: {
+    name: "FlujoCaja",
+    label: "Flujo de caja",
+    kind: "payment",
+    description: "Flujo de caja del periodo (procedimiento BMT_FLUJO_CAJA en HANA).",
+    filters: [
+      { ...dateFrom, required: true },
+      { ...dateTo, required: true },
+    ],
+    // El SP espera fechas en formato YYYYMMDD (p.ej. '20250501').
+    sql: (f) => ({
+      text: "CALL BMT_FLUJO_CAJA(?, ?)",
+      params: [(f.dateFrom || "").replace(/-/g, ""), (f.dateTo || "").replace(/-/g, "")],
+    }),
+  },
   AntiguedadCxC: {
     name: "AntiguedadCxC",
     label: "Antigüedad cuentas por cobrar (₡ y $)",

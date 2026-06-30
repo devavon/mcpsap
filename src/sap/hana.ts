@@ -86,7 +86,8 @@ export async function runHanaQuery<T = Record<string, unknown>>(
   try {
     await exec(conn, `SET SCHEMA "${schema}"`);
     const rows = await exec<T>(conn, sql, params);
-    return coerceRows(rows as Record<string, unknown>[]) as T[];
+    // Un CALL puede devolver el result set como array; si no, normalizamos.
+    return (Array.isArray(rows) ? coerceRows(rows as Record<string, unknown>[]) : []) as T[];
   } catch (e: any) {
     throw new HanaError(`Error ejecutando consulta HANA: ${e?.message ?? e}`);
   } finally {
