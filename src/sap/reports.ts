@@ -558,6 +558,51 @@ ORDER BY M."Código", M."ord", M."Nº Trans.", M."Line"`,
       params: [f.dateFrom, f.dateFrom, f.dateTo, f.socioDesde || "", f.socioHasta || "ZZZZZZZZZZ"],
     }),
   },
+  LibroMayorCuenta: {
+    name: "LibroMayorCuenta",
+    label: "Libro mayor por cuenta (₡ y $)",
+    kind: "journal",
+    description:
+      "Movimientos por cuenta de mayor con saldo inicial del período y saldo acumulado, contrapartida y doble moneda. Acota el rango de cuentas para que sea ágil.",
+    filters: [
+      { key: "cuentaDesde", label: "Cuenta desde", type: "text", placeholder: "ej. 1-1-01" },
+      { key: "cuentaHasta", label: "Cuenta hasta", type: "text", placeholder: "ej. 1-1-99" },
+      { ...dateFrom, required: true },
+      { ...dateTo, required: true },
+    ],
+    sql: (f) => ({
+      text: `
+SELECT
+  M."Cuenta", M."Nombre Cuenta", M."Fecha Cont.", M."Fecha Venc.", M."Documento",
+  M."Nº Trans.", M."Concepto", M."Contrapartida", M."Nombre Contrap.",
+  M."Débito ₡", M."Crédito ₡",
+  COALESCE(M."OpenCol",0) + SUM(M."NetCol") OVER (PARTITION BY M."Cuenta" ORDER BY M."ord", M."Nº Trans.", M."Line" ROWS UNBOUNDED PRECEDING) AS "Saldo ₡",
+  M."Débito $", M."Crédito $",
+  COALESCE(M."OpenDol",0) + SUM(M."NetDol") OVER (PARTITION BY M."Cuenta" ORDER BY M."ord", M."Nº Trans.", M."Line" ROWS UNBOUNDED PRECEDING) AS "Saldo $"
+FROM (
+  SELECT T1."Account" "Cuenta", A."AcctName" "Nombre Cuenta",
+    TO_VARCHAR(T0."RefDate",'YYYY-MM-DD') "Fecha Cont.",
+    TO_VARCHAR(T1."DueDate",'YYYY-MM-DD') "Fecha Venc.",
+    T0."RefDate" "ord",
+    T0."TransType" || ' ' || T0."BaseRef" "Documento", T0."TransId" "Nº Trans.", T1."Line_ID" "Line",
+    CASE WHEN T1."LineMemo" <> '' THEN T1."LineMemo" ELSE T0."Memo" END "Concepto",
+    T1."ContraAct" "Contrapartida", AC."AcctName" "Nombre Contrap.",
+    T1."Debit" "Débito ₡", T1."Credit" "Crédito ₡", T1."Debit"-T1."Credit" "NetCol",
+    T1."SYSDeb" "Débito $", T1."SYSCred" "Crédito $", T1."SYSDeb"-T1."SYSCred" "NetDol",
+    op."OpenCol", op."OpenDol"
+  FROM OJDT T0
+  INNER JOIN JDT1 T1 ON T0."TransId"=T1."TransId"
+  LEFT JOIN OACT A ON T1."Account"=A."AcctCode"
+  LEFT JOIN OACT AC ON T1."ContraAct"=AC."AcctCode"
+  LEFT JOIN ( SELECT X."Account" ac, SUM(X."Debit"-X."Credit") "OpenCol", SUM(X."SYSDeb"-X."SYSCred") "OpenDol"
+              FROM OJDT H INNER JOIN JDT1 X ON H."TransId"=X."TransId"
+              WHERE H."RefDate" < ? GROUP BY X."Account" ) op ON op.ac=T1."Account"
+  WHERE T0."RefDate" BETWEEN ? AND ? AND T1."Account" BETWEEN ? AND ?
+) M
+ORDER BY M."Cuenta", M."ord", M."Nº Trans.", M."Line"`,
+      params: [f.dateFrom, f.dateFrom, f.dateTo, f.cuentaDesde || "", f.cuentaHasta || "ZZZZZZZZZZ"],
+    }),
+  },
   AntiguedadCxC: {
     name: "AntiguedadCxC",
     label: "Antigüedad cuentas por cobrar (₡ y $)",
