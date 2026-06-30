@@ -617,7 +617,7 @@ ORDER BY M."Cuenta", M."ord", M."Nº Trans.", M."Line"`,
       text: `
 SELECT
     X."CardCode"                                                       AS "Código",
-    X."CardName"                                                       AS "Cliente",
+    O."CardName"                                                       AS "Cliente",
     SUM(CASE WHEN X."Tipo" = 'Factura'       THEN  X."OrigUSD" END)    AS "Fact DOL.",
     SUM(CASE WHEN X."Tipo" = 'Nota Crédito'  THEN -X."OrigUSD" END)    AS "NC DOL.",
     SUM(CASE WHEN X."Tipo" = 'Pago/Adelanto' THEN -X."OrigUSD" END)    AS "Pago DOL.",
@@ -658,9 +658,10 @@ FROM (
         INNER JOIN JDT1 T3 ON T3."TransId" = T2."TransId" AND T3."ShortName" = T2."CardCode"
         WHERE T2."Canceled" = 'N' AND T2."DocType" = 'C'
 ) X
+LEFT JOIN OCRD O ON O."CardCode" = X."CardCode"
 WHERE X."Fecha" >= ? AND X."Fecha" <= ?
-GROUP BY X."CardCode", X."CardName"
-ORDER BY X."CardName"`,
+GROUP BY X."CardCode", O."CardName"
+ORDER BY O."CardName"`,
       params: [f.dateFrom, f.dateTo],
     }),
   },
