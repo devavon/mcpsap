@@ -32,6 +32,7 @@ export interface CompaniesConfig {
 export interface UserRecord {
   username: string;
   fullName?: string;
+  email?: string;
   role: string;
   passwordHash: string;
   active?: boolean;

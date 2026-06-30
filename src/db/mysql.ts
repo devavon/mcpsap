@@ -52,6 +52,7 @@ export async function initSchema(): Promise<void> {
     `CREATE TABLE IF NOT EXISTS mcp_users (
        username VARCHAR(64) PRIMARY KEY,
        full_name VARCHAR(255) NULL,
+       email VARCHAR(255) NULL,
        password_hash VARCHAR(255) NOT NULL,
        role VARCHAR(64) NOT NULL,
        active TINYINT(1) NOT NULL DEFAULT 1,
@@ -83,6 +84,28 @@ export async function initSchema(): Promise<void> {
   ];
   for (const sql of statements) {
     await getPool().query(sql);
+  }
+  await migrate();
+}
+
+/**
+ * Migraciones idempotentes para bases ya existentes (CREATE TABLE IF NOT EXISTS
+ * no agrega columnas nuevas a tablas viejas). Portable MySQL/MariaDB: verifica
+ * information_schema antes de hacer ALTER.
+ */
+async function migrate(): Promise<void> {
+  await addColumnIfMissing("mcp_users", "email", "VARCHAR(255) NULL AFTER full_name");
+}
+
+async function addColumnIfMissing(table: string, column: string, definition: string): Promise<void> {
+  const rows = await query<{ c: number }>(
+    `SELECT COUNT(*) AS c FROM information_schema.COLUMNS
+     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?`,
+    [table, column],
+  );
+  if ((rows[0]?.c ?? 0) === 0) {
+    await getPool().query(`ALTER TABLE \`${table}\` ADD COLUMN \`${column}\` ${definition}`);
+    console.error(`[mcp-sap-b1] migración: columna ${table}.${column} agregada`);
   }
 }
 

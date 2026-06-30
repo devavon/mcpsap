@@ -64,11 +64,12 @@ export async function refreshConfigCache(): Promise<void> {
   const users = await query<{
     username: string;
     full_name: string | null;
+    email: string | null;
     password_hash: string;
     role: string;
     active: number;
     all_companies: number;
-  }>("SELECT username, full_name, password_hash, role, active, all_companies FROM mcp_users");
+  }>("SELECT username, full_name, email, password_hash, role, active, all_companies FROM mcp_users");
   const ucomp = await query<{ username: string; company_alias: string }>(
     "SELECT username, company_alias FROM mcp_user_companies",
   );
@@ -79,6 +80,7 @@ export async function refreshConfigCache(): Promise<void> {
     users: users.map((u) => ({
       username: u.username,
       fullName: u.full_name ?? undefined,
+      email: u.email ?? undefined,
       passwordHash: u.password_hash,
       role: u.role,
       active: !!u.active,
@@ -199,6 +201,7 @@ export async function deleteCompany(alias: string): Promise<void> {
 export async function upsertUser(u: {
   username: string;
   fullName?: string;
+  email?: string;
   role: string;
   active: boolean;
   allCompanies: boolean;
@@ -211,15 +214,15 @@ export async function upsertUser(u: {
   const existing = await query<{ username: string }>("SELECT username FROM mcp_users WHERE username = :u", { u: u.username });
   if (existing.length) {
     await query(
-      `UPDATE mcp_users SET full_name = :full, role = :role, active = :active, all_companies = :all
+      `UPDATE mcp_users SET full_name = :full, email = :email, role = :role, active = :active, all_companies = :all
        ${hash ? ", password_hash = :hash" : ""} WHERE username = :username`,
-      { full: u.fullName || null, role: u.role, active: u.active ? 1 : 0, all: u.allCompanies ? 1 : 0, hash, username: u.username },
+      { full: u.fullName || null, email: u.email || null, role: u.role, active: u.active ? 1 : 0, all: u.allCompanies ? 1 : 0, hash, username: u.username },
     );
   } else {
     await query(
-      `INSERT INTO mcp_users (username, full_name, password_hash, role, active, all_companies)
-       VALUES (:username, :full, :hash, :role, :active, :all)`,
-      { username: u.username, full: u.fullName || null, hash: hash ?? "", role: u.role, active: u.active ? 1 : 0, all: u.allCompanies ? 1 : 0 },
+      `INSERT INTO mcp_users (username, full_name, email, password_hash, role, active, all_companies)
+       VALUES (:username, :full, :email, :hash, :role, :active, :all)`,
+      { username: u.username, full: u.fullName || null, email: u.email || null, hash: hash ?? "", role: u.role, active: u.active ? 1 : 0, all: u.allCompanies ? 1 : 0 },
     );
   }
 

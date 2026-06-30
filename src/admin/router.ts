@@ -9,6 +9,8 @@ import {
   queryAudit, cachedUsers,
 } from "../db/repo.js";
 import { audit } from "../audit/logger.js";
+import { config } from "../config.js";
+import { sendMail, mailEnabled, generatePassword, credentialsEmail } from "../mail/sendgrid.js";
 import { page, esc, searchBar, createSession, destroySession, currentAdmin } from "./ui.js";
 
 /** Entidades disponibles para asignar permisos en roles. */
@@ -84,6 +86,7 @@ export function createAdminRouter(): express.Router {
     const rows = cachedUsers().users.map((u) => `
       <tr>
         <td><b>${esc(u.username)}</b><br><span class="muted">${esc(u.fullName ?? "")}</span></td>
+        <td>${u.email ? esc(u.email) : '<span class="muted">—</span>'}</td>
         <td>${esc(u.role)}</td>
         <td>${u.companies === "*" ? '<span class="pill">TODAS</span>' : (u.companies as string[]).map((c) => `<span class="pill">${esc(c)}</span>`).join(" ") || '<span class="muted">ninguna</span>'}</td>
         <td>${u.active === false ? '<span class="muted">inactivo</span>' : "✅"}</td>
@@ -92,10 +95,18 @@ export function createAdminRouter(): express.Router {
           <form method="post" action="/admin/users/${encodeURIComponent(u.username)}/delete" onsubmit="return confirm('¿Eliminar ${esc(u.username)}?')"><button class="danger">Eliminar</button></form>
         </td>
       </tr>`).join("");
+    const u = esc(req.query.u ?? "");
+    const flashes: Record<string, string> = {
+      sent: `<div class="ok">✅ Usuario <b>${u}</b> guardado y credenciales enviadas por correo.</div>`,
+      mailoff: `<div class="err">Usuario <b>${u}</b> guardado, pero el correo no está configurado (SENDGRID_API_KEY / MAIL_FROM). No se enviaron credenciales.</div>`,
+      mailerr: `<div class="err">Usuario <b>${u}</b> guardado, pero falló el envío del correo. Revisa la auditoría.</div>`,
+    };
+    const flash = flashes[String(req.query.f ?? "")] ?? "";
     res.send(page("Usuarios", `
       <h1>Usuarios</h1>
-      ${searchBar("#tbl", "Buscar por usuario, rol o empresa…", '<a class="btn" href="/admin/users/new">+ Nuevo usuario</a>')}
-      <table id="tbl"><tr><th>Usuario</th><th>Rol</th><th>Empresas</th><th>Activo</th><th></th></tr>${rows}</table>`, admin));
+      ${flash}
+      ${searchBar("#tbl", "Buscar por usuario, correo, rol o empresa…", '<a class="btn" href="/admin/users/new">+ Nuevo usuario</a>')}
+      <table id="tbl"><tr><th>Usuario</th><th>Correo</th><th>Rol</th><th>Empresas</th><th>Activo</th><th></th></tr>${rows}</table>`, admin));
   });
 
   r.get("/users/new", guard, (req, res) => {
@@ -110,18 +121,45 @@ export function createAdminRouter(): express.Router {
 
   r.post("/users", guard, async (req, res) => {
     const b = req.body;
+    const admin = (req as any).admin as string;
+    const username = String(b.username).trim();
+    const email = b.email ? String(b.email).trim() : undefined;
+    const fullName = b.fullName ? String(b.fullName).trim() : undefined;
     const companies = ([] as string[]).concat(b.companies ?? []).filter(Boolean);
+    const isNew = !cachedUsers().users.some((u) => u.username === username);
+
+    // Contraseña: la escrita; si es nuevo y se dejó vacía, se genera una.
+    let password = b.password ? String(b.password) : undefined;
+    if (isNew && !password) password = generatePassword();
+
     await upsertUser({
-      username: String(b.username).trim(),
-      fullName: b.fullName,
+      username, fullName, email,
       role: b.role,
       active: b.active === "on",
       allCompanies: b.allCompanies === "on",
       companies,
-      password: b.password ? String(b.password) : undefined,
+      password,
     });
-    audit({ username: (req as any).admin, role: "superadmin", action: "admin:user-upsert", outcome: "ok", target: b.username });
-    res.redirect("/admin/users");
+    audit({ username: admin, role: "superadmin", action: "admin:user-upsert", outcome: "ok", target: username });
+
+    // Enviar credenciales por correo (solo si hay email, contraseña conocida y se marcó la casilla).
+    let flash = "";
+    if (b.sendEmail === "on" && email && password) {
+      if (!mailEnabled()) {
+        flash = "mailoff";
+      } else {
+        try {
+          const { subject, html } = credentialsEmail({ fullName, username, password, appUrl: config.mail.appUrl || undefined });
+          await sendMail({ to: email, subject, html });
+          audit({ username: admin, role: "superadmin", action: "admin:user-credentials-sent", outcome: "ok", target: username, detail: `a ${email}` });
+          flash = "sent";
+        } catch (e) {
+          audit({ username: admin, role: "superadmin", action: "admin:user-credentials-sent", outcome: "error", target: username, detail: (e as Error).message });
+          flash = "mailerr";
+        }
+      }
+    }
+    res.redirect(`/admin/users?u=${encodeURIComponent(username)}${flash ? `&f=${flash}` : ""}`);
   });
 
   r.post("/users/:username/delete", guard, async (req, res) => {
@@ -312,8 +350,14 @@ function userForm(_admin: string, u: any | null): string {
         <div><label>Nombre completo</label><input name="fullName" value="${esc(u?.fullName ?? "")}"></div>
       </div>
       <div class="row">
+        <div><label>Correo electrónico</label><input name="email" type="email" value="${esc(u?.email ?? "")}" placeholder="usuario@empresa.com"></div>
         <div><label>Rol</label><select name="role">${roles.map((rn) => `<option ${u?.role === rn ? "selected" : ""}>${esc(rn)}</option>`).join("")}</select></div>
-        <div><label>Contraseña ${isNew ? "" : "(dejar vacío para no cambiar)"}</label><input name="password" type="password" ${isNew ? "required" : ""}></div>
+      </div>
+      <div class="row">
+        <div><label>Contraseña ${isNew ? "(vacío = se genera una y se envía por correo)" : "(dejar vacío para no cambiar)"}</label><input name="password" type="text" autocomplete="new-password"></div>
+        <div style="display:flex;align-items:flex-end">
+          <label style="margin:0"><input type="checkbox" name="sendEmail" checked style="width:auto"> Enviar credenciales por correo</label>
+        </div>
       </div>
       <label><input type="checkbox" name="active" ${u?.active === false ? "" : "checked"} style="width:auto"> Activo</label>
       <label><input type="checkbox" name="allCompanies" id="allc" ${(!u || u.companies === "*") ? "checked" : ""} style="width:auto" onchange="document.getElementById('cbox').style.display=this.checked?'none':'block'"> Acceso a TODAS las empresas</label>
