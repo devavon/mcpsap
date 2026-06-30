@@ -90,6 +90,10 @@ export const config = {
     // En plataformas con disco efímero (Railway), conviene loguear también a
     // stdout para que el agregador de logs lo capture.
     stdout: optional("AUDIT_STDOUT", "false").toLowerCase() === "true",
+    // Escritura del archivo JSONL: "auto" (por defecto) = solo si NO hay DB,
+    // porque con MySQL la auditoría ya queda persistida en la tabla mcp_audit
+    // (en disco efímero el archivo se pierde). Force con "true"/"false".
+    file: optional("AUDIT_FILE", "auto").toLowerCase(),
   },
 };
 

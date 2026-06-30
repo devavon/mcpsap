@@ -6,9 +6,17 @@ import { dbEnabled } from "../db/mysql.js";
 import { insertAudit } from "../db/repo.js";
 
 /**
- * Auditoría completa: registra TODA operación (lectura y escritura) en
- * archivos JSONL, uno por día (audit-YYYY-MM-DD.jsonl). Cada línea es un
- * evento independiente, fácil de ingerir en SIEM/ELK.
+ * Auditoría completa: registra TODA operación (lectura y escritura).
+ *
+ * Destinos:
+ *  - MySQL (tabla mcp_audit) cuando hay DATABASE_URL → fuente persistente y la
+ *    que muestra el panel /admin.
+ *  - Archivo JSONL por día (audit-YYYY-MM-DD.jsonl) SOLO cuando no hay DB (o si
+ *    se fuerza con AUDIT_FILE=true). Útil para ingerir en SIEM/ELK sin DB.
+ *  - stdout opcional (AUDIT_STDOUT=true) para agregadores de logs.
+ *
+ * Así, con base de datos no se duplica en disco (que además es efímero en la
+ * nube): la auditoría vive en MySQL.
  */
 
 export interface AuditEvent {
@@ -33,6 +41,13 @@ let dirReady = false;
 // Si el entorno no permite escribir a disco (p. ej. FS de solo lectura),
 // se desactiva el log a archivo tras el primer fallo para no llenar stderr.
 let fileLoggingDisabled = false;
+
+/** ¿Se debe escribir el JSONL en disco? Por defecto: solo si NO hay DB. */
+function fileLoggingEnabled(): boolean {
+  if (config.audit.file === "true") return true;
+  if (config.audit.file === "false") return false;
+  return !dbEnabled(); // "auto"
+}
 
 function ensureDir(): string {
   const dir = resolve(config.audit.dir);
@@ -60,7 +75,7 @@ export function audit(event: Omit<AuditEvent, "ts">): void {
       console.error("[audit] fallo al insertar en DB:", (e as Error).message),
     );
   }
-  if (fileLoggingDisabled) return;
+  if (fileLoggingDisabled || !fileLoggingEnabled()) return;
   try {
     appendFileSync(fileForToday(), line + "\n", "utf8");
   } catch (e) {
