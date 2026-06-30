@@ -20,6 +20,12 @@ FROM node:22-bookworm-slim AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
 
+# OpenSSL: el cliente nativo de SAP HANA lo necesita para conexiones TLS
+# (encrypt=true). La imagen slim no lo trae.
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends libssl3 openssl \
+  && rm -rf /var/lib/apt/lists/*
+
 # Solo dependencias de producción.
 COPY package.json package-lock.json* ./
 RUN npm ci --omit=dev && npm cache clean --force
