@@ -18,6 +18,17 @@ import { queryEntityRows, resolveCompany } from "../tools/operations.js";
 import { audit } from "../audit/logger.js";
 import type { UserContext } from "../types.js";
 
+/**
+ * Campo de fecha efectivo de la entidad. Los documentos (ventas/compras/pagos/
+ * asientos) tienen fecha aunque no se declare explícitamente (por defecto
+ * DocDate); los maestros (Socios) no tienen.
+ */
+function entityDateField(meta: EntityMeta): string | null {
+  if (meta.dateField) return meta.dateField;
+  if (meta.kind === "master") return null;
+  return "DocDate";
+}
+
 /** Filtros que ofrece una entidad estándar, según sus metadatos. */
 function entityFilters(meta: EntityMeta): FilterDef[] {
   const f: FilterDef[] = [];
@@ -25,7 +36,7 @@ function entityFilters(meta: EntityMeta): FilterDef[] {
     f.push({ key: "search", label: "Buscar", type: "text", placeholder: `busca en ${meta.searchFields.join(", ")}` });
   if (meta.searchFields.includes("CardCode"))
     f.push({ key: "cardCode", label: "Socio (CardCode)", type: "text", placeholder: "código exacto" });
-  if (meta.dateField) {
+  if (entityDateField(meta)) {
     f.push({ key: "dateFrom", label: "Desde", type: "date" });
     f.push({ key: "dateTo", label: "Hasta", type: "date" });
   }
@@ -236,9 +247,9 @@ export function createRestRouter(): Router {
       const meta = ENTITIES[name];
       const f: string[] = [];
       if (flt.cardCode) f.push(`CardCode eq '${String(flt.cardCode).replace(/'/g, "''")}'`);
-      const dateField = meta?.dateField ?? "DocDate";
-      if (flt.dateFrom) f.push(`${dateField} ge '${flt.dateFrom}'`);
-      if (flt.dateTo) f.push(`${dateField} le '${flt.dateTo}'`);
+      const dateField = meta ? entityDateField(meta) : "DocDate";
+      if (dateField && flt.dateFrom) f.push(`${dateField} ge '${flt.dateFrom}'`);
+      if (dateField && flt.dateTo) f.push(`${dateField} le '${flt.dateTo}'`);
       if (b.filter) f.push(`(${b.filter})`);
 
       const result = await queryEntityRows(req.user!, name, {
