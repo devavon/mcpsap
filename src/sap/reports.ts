@@ -512,6 +512,52 @@ export const REPORTS: Record<string, ReportDef> = {
     ],
     run: trialBalance,
   },
+  LibroMayor: {
+    name: "LibroMayor",
+    label: "Libro mayor por socio (₡ y $)",
+    kind: "master",
+    description:
+      "Movimientos por socio de negocio con saldo inicial del período y saldo acumulado, contrapartida y doble moneda (igual al Libro Mayor de SAP). Deja los socios vacíos para todos.",
+    filters: [
+      { key: "socioDesde", label: "Socio desde", type: "text", placeholder: "vacío = todos" },
+      { key: "socioHasta", label: "Socio hasta", type: "text", placeholder: "vacío = todos" },
+      { ...dateFrom, required: true },
+      { ...dateTo, required: true },
+    ],
+    sql: (f) => ({
+      text: `
+SELECT
+  M."Código", M."Cliente", M."Fecha Cont.", M."Fecha Venc.", M."Documento",
+  M."Nº Trans.", M."Concepto", M."Cuenta Contrap.", M."Nombre Contrap.",
+  M."Débito ₡", M."Crédito ₡",
+  COALESCE(M."OpenCol",0) + SUM(M."NetCol") OVER (PARTITION BY M."Código" ORDER BY M."ord", M."Nº Trans.", M."Line" ROWS UNBOUNDED PRECEDING) AS "Saldo ₡",
+  M."Débito $", M."Crédito $",
+  COALESCE(M."OpenDol",0) + SUM(M."NetDol") OVER (PARTITION BY M."Código" ORDER BY M."ord", M."Nº Trans.", M."Line" ROWS UNBOUNDED PRECEDING) AS "Saldo $"
+FROM (
+  SELECT T1."ShortName" "Código", C."CardName" "Cliente",
+    TO_VARCHAR(T0."RefDate",'YYYY-MM-DD') "Fecha Cont.",
+    TO_VARCHAR(T1."DueDate",'YYYY-MM-DD') "Fecha Venc.",
+    T0."RefDate" "ord",
+    T0."TransType" || ' ' || T0."BaseRef" "Documento",
+    T0."TransId" "Nº Trans.", T1."Line_ID" "Line",
+    CASE WHEN T1."LineMemo" <> '' THEN T1."LineMemo" ELSE T0."Memo" END "Concepto",
+    T1."ContraAct" "Cuenta Contrap.", A."AcctName" "Nombre Contrap.",
+    T1."Debit" "Débito ₡", T1."Credit" "Crédito ₡", T1."Debit"-T1."Credit" "NetCol",
+    T1."SYSDeb" "Débito $", T1."SYSCred" "Crédito $", T1."SYSDeb"-T1."SYSCred" "NetDol",
+    op."OpenCol", op."OpenDol"
+  FROM OJDT T0
+  INNER JOIN JDT1 T1 ON T0."TransId"=T1."TransId"
+  INNER JOIN OCRD C ON T1."ShortName"=C."CardCode"
+  LEFT JOIN OACT A ON T1."ContraAct"=A."AcctCode"
+  LEFT JOIN ( SELECT X."ShortName" cc, SUM(X."Debit"-X."Credit") "OpenCol", SUM(X."SYSDeb"-X."SYSCred") "OpenDol"
+              FROM OJDT H INNER JOIN JDT1 X ON H."TransId"=X."TransId"
+              WHERE H."RefDate" < ? GROUP BY X."ShortName" ) op ON op.cc=T1."ShortName"
+  WHERE T0."RefDate" BETWEEN ? AND ? AND T1."ShortName" BETWEEN ? AND ?
+) M
+ORDER BY M."Código", M."ord", M."Nº Trans.", M."Line"`,
+      params: [f.dateFrom, f.dateFrom, f.dateTo, f.socioDesde || "", f.socioHasta || "ZZZZZZZZZZ"],
+    }),
+  },
   AntiguedadCxC: {
     name: "AntiguedadCxC",
     label: "Antigüedad cuentas por cobrar (₡ y $)",
