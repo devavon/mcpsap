@@ -114,8 +114,15 @@ export function createRestRouter(): Router {
         return void res.status(400).json({ error: "Faltan usuario o contraseña." });
       }
       const token = randomUUID();
-      const user = await login(token, String(username), String(password));
-      res.json(profile(token, user));
+      try {
+        const user = await login(token, String(username), String(password));
+        audit({ username: user.username, role: user.role, action: "login", operation: "read", outcome: "ok", detail: "Inicio de sesión (Excel)" });
+        res.json(profile(token, user));
+      } catch (e) {
+        // Registra el intento fallido con el usuario que se intentó.
+        audit({ username: String(username), role: "-", action: "login", operation: "read", outcome: "denied", detail: (e as Error).message });
+        throw e;
+      }
     } catch (e) {
       fail(res, e);
     }
@@ -144,6 +151,7 @@ export function createRestRouter(): Router {
         const { alias } = req.body ?? {};
         if (!alias) return void res.status(400).json({ error: "Falta el alias de empresa." });
         selectCompany(req.user!, String(alias));
+        audit({ username: req.user!.username, role: req.user!.role, company: String(alias), action: "select-company", operation: "read", outcome: "ok" });
         res.json(profile(req.token!, req.user!));
       } catch (e) {
         fail(res, e);
@@ -267,7 +275,8 @@ export function createRestRouter(): Router {
   });
 
   // --- Cerrar sesión ---
-  router.post("/logout", requireAuth, (req: Request & { token?: string }, res) => {
+  router.post("/logout", requireAuth, (req: Request & { user?: UserContext; token?: string }, res) => {
+    if (req.user) audit({ username: req.user.username, role: req.user.role, action: "logout", operation: "read", outcome: "ok" });
     logout(req.token);
     res.json({ ok: true });
   });

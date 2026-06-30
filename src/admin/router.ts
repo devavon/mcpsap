@@ -225,33 +225,73 @@ export function createAdminRouter(): express.Router {
       to: q.to ? String(q.to) : undefined,
       limit: 200,
     };
-    const rows = (await queryAudit(filter)).map((e) => `
-      <tr>
-        <td class="muted" style="white-space:nowrap">${esc(e.ts)}</td>
-        <td>${esc(e.username ?? "")}</td>
-        <td>${esc(e.company ?? "")}</td>
-        <td>${esc(e.action ?? "")}</td>
-        <td>${esc(e.outcome ?? "")}</td>
-        <td>${esc(e.target ?? "")}</td>
-        <td class="muted">${esc((e.detail ?? "").slice(0, 80))}</td>
-      </tr>`).join("");
+    const events = await queryAudit(filter);
+    const badge = (o: string) => {
+      const cls: Record<string, string> = { ok: "b-ok", denied: "b-denied", error: "b-error", pending: "b-pending", confirmed: "b-pending" };
+      return `<span class="badge ${cls[o] ?? "b-mut"}">${esc(o || "—")}</span>`;
+    };
+    const prettyParams = (p: unknown): string => {
+      if (p == null || p === "") return "";
+      try {
+        return JSON.stringify(typeof p === "string" ? JSON.parse(p) : p, null, 2);
+      } catch {
+        return String(p);
+      }
+    };
+    const filterChip = (k: string, v?: string) =>
+      v ? `<span class="pill">${esc(k)}: ${esc(v)} <a href="/admin/audit" style="color:inherit">✕</a></span>` : "";
+
+    const rows = events
+      .map((e) => {
+        const params = prettyParams(e.params);
+        const moreBody = [e.detail ? esc(e.detail) : "", params ? "params:\n" + esc(params) : ""].filter(Boolean).join("\n\n");
+        const more = moreBody ? `<details class="au"><summary>ver detalle</summary><pre>${moreBody}</pre></details>` : "";
+        const op = [e.entity, e.operation].filter(Boolean).map(esc).join(" · ");
+        return `<tr>
+          <td class="muted mono" style="white-space:nowrap">${esc(e.ts)}</td>
+          <td><strong>${esc(e.username ?? "—")}</strong>${e.role ? `<br><span class="muted">${esc(e.role)}</span>` : ""}</td>
+          <td>${esc(e.company ?? "")}</td>
+          <td class="mono">${esc(e.action ?? "")}${op ? `<br><span class="muted">${op}</span>` : ""}</td>
+          <td>${badge(e.outcome ?? "")}</td>
+          <td class="mono">${esc(e.target ?? "")}</td>
+          <td>${esc((e.detail ?? "").slice(0, 70))}${more}</td>
+        </tr>`;
+      })
+      .join("");
+
+    const activos = [
+      filterChip("usuario", filter.username),
+      filterChip("acción", filter.action),
+      filterChip("empresa", filter.company),
+      filterChip("resultado", filter.outcome),
+    ].join(" ");
+
     res.send(page("Auditoría", `
       <h1>Auditoría</h1>
-      <form class="card" method="get" action="/admin/audit">
-        <div class="row">
-          <div><label>Usuario</label><input name="username" value="${esc(q.username ?? "")}"></div>
-          <div><label>Acción contiene</label><input name="action" value="${esc(q.action ?? "")}"></div>
-          <div><label>Empresa</label><input name="company" value="${esc(q.company ?? "")}"></div>
-          <div><label>Resultado</label><input name="outcome" value="${esc(q.outcome ?? "")}" placeholder="ok / denied / error / confirmed"></div>
-        </div>
-        <div class="row">
-          <div><label>Desde</label><input name="from" type="datetime-local" value="${esc(q.from ?? "")}"></div>
-          <div><label>Hasta</label><input name="to" type="datetime-local" value="${esc(q.to ?? "")}"></div>
-          <div style="display:flex;align-items:flex-end"><button>Filtrar</button></div>
-        </div>
-      </form>
-      <p class="muted">Últimos ${rows ? "" : "0 "}registros (máx. 200)</p>
-      <table><tr><th>Fecha</th><th>Usuario</th><th>Empresa</th><th>Acción</th><th>Resultado</th><th>Objeto</th><th>Detalle</th></tr>${rows}</table>`, admin));
+      <details class="card filters" ${activos.trim() ? "open" : ""}>
+        <summary>Filtros del servidor</summary>
+        <form method="get" action="/admin/audit">
+          <div class="row">
+            <div><label>Usuario</label><input name="username" value="${esc(q.username ?? "")}"></div>
+            <div><label>Acción contiene</label><input name="action" value="${esc(q.action ?? "")}"></div>
+            <div><label>Empresa</label><input name="company" value="${esc(q.company ?? "")}"></div>
+            <div><label>Resultado</label><input name="outcome" value="${esc(q.outcome ?? "")}" placeholder="ok / denied / error / pending"></div>
+          </div>
+          <div class="row">
+            <div><label>Desde</label><input name="from" type="datetime-local" value="${esc(q.from ?? "")}"></div>
+            <div><label>Hasta</label><input name="to" type="datetime-local" value="${esc(q.to ?? "")}"></div>
+            <div style="display:flex;align-items:flex-end;gap:8px"><button>Filtrar</button><a class="btn sec" href="/admin/audit">Limpiar</a></div>
+          </div>
+        </form>
+      </details>
+      ${activos.trim() ? `<div style="margin:8px 0">${activos}</div>` : ""}
+      ${searchBar("#tbl", "Buscar en los resultados cargados…", `<span class="muted">${events.length} de máx. ${filter.limit} eventos</span>`)}
+      <div class="table-scroll">
+        <table id="tbl">
+          <tr><th>Fecha</th><th>Usuario</th><th>Empresa</th><th>Acción</th><th>Resultado</th><th>Objeto</th><th>Detalle</th></tr>
+          ${rows || '<tr class="no-results"><td colspan="7">Sin eventos</td></tr>'}
+        </table>
+      </div>`, admin));
   });
 
   return r;

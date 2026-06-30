@@ -171,6 +171,22 @@ export function page(title: string, body: string, admin?: string | null): string
 
   /* ---- Misc ---- */
   .pill{display:inline-block;background:var(--ok-bg);color:var(--ok);padding:3px 10px;border-radius:999px;font-size:12px;font-weight:600;margin:1px}
+  /* Badges de resultado (auditoría) */
+  .badge{display:inline-block;padding:3px 9px;border-radius:999px;font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.3px;white-space:nowrap}
+  .b-ok{background:#e7f6ec;color:#127a3a}
+  .b-denied{background:#fff3e0;color:#a85b00}
+  .b-error{background:#fdecea;color:#b42318}
+  .b-pending{background:#e8f0fe;color:#1a56db}
+  .b-mut{background:#eef1f4;color:#6b7785}
+  .table-scroll{overflow:auto;border:1px solid var(--bd);border-radius:var(--r);box-shadow:var(--sh)}
+  .table-scroll table{border:none;box-shadow:none;border-radius:0}
+  .mono{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px}
+  details.au summary{cursor:pointer;color:var(--brand-2);font-size:11.5px;list-style:none}
+  details.au summary::-webkit-details-marker{display:none}
+  details.au pre{white-space:pre-wrap;word-break:break-word;background:#f6f8fa;border:1px solid var(--bd);border-radius:6px;padding:9px;margin:7px 0 0;font-size:11.5px;max-width:560px;max-height:280px;overflow:auto}
+  details.filters{padding:0}details.filters>summary{cursor:pointer;font-weight:600;padding:14px 18px;color:var(--brand-ink)}
+  details.filters[open]>summary{border-bottom:1px solid var(--bd)}
+  details.filters .row{padding:14px 18px 4px}details.filters .pad{padding:0 18px 16px}
   .muted{color:var(--muted);font-size:12px}
   .err{background:var(--err-bg);color:var(--err);padding:12px 14px;border-radius:var(--r-sm);margin:12px 0;border:1px solid #f4c7c2}
   .ok{background:var(--ok-bg);color:var(--ok);padding:12px 14px;border-radius:var(--r-sm);margin:12px 0;border:1px solid #b8e6c6}
