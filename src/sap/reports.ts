@@ -210,6 +210,8 @@ interface PurchaseDoc {
 async function estadoObligaciones(client: ServiceLayerClient, f: Record<string, string>): Promise<ReportResult> {
   const filters = ["DocumentStatus eq 'bost_Open'"];
   if (f.cardCode) filters.push(`CardCode eq '${String(f.cardCode).replace(/'/g, "''")}'`);
+  if (f.dateFrom) filters.push(`DocDate ge '${f.dateFrom}'`);
+  if (f.dateTo) filters.push(`DocDate le '${f.dateTo}'`);
   const q =
     `$select=DocEntry,DocNum,Comments,CardCode,CardName,DocDueDate,DocCurrency,NumAtCard,` +
     `DocTotal,DocTotalFc,DocTotalSys,PaidToDate,PaidToDateSys,DocumentLines` +
@@ -577,7 +579,11 @@ ORDER BY X."CardName"`,
     kind: "purchaseDoc",
     description:
       "Facturas de compra abiertas con total y pendiente en colones y dólares, por centro de costo. (No incluye pagos a cuenta: el Service Layer no expone su saldo.)",
-    filters: [{ key: "cardCode", label: "Proveedor (CardCode)", type: "text", placeholder: "opcional" }],
+    filters: [
+      { key: "cardCode", label: "Proveedor (CardCode)", type: "text", placeholder: "opcional" },
+      dateFrom,
+      dateTo,
+    ],
     run: estadoObligaciones,
   },
   PartnerAging: {
