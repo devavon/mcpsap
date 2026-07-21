@@ -4,15 +4,29 @@ import type { Request, Response } from "express";
 /** Sesiones del panel admin (en memoria, cookie httpOnly). */
 interface AdminSession {
   username: string;
+  role: string;
   ts: number;
 }
 const sessions = new Map<string, AdminSession>();
 const TTL = 8 * 60 * 60_000; // 8 horas
 const COOKIE = "mcp_admin";
 
-export function createSession(username: string, res: Response): void {
+/**
+ * Roles con acceso al panel /admin y las secciones que ve cada uno.
+ * superadmin: todo. gestor: solo usuarios y empresas.
+ */
+export const ADMIN_SECTIONS: Record<string, string[]> = {
+  superadmin: ["users", "companies", "roles", "audit"],
+  gestor: ["users", "companies"],
+};
+
+export function adminSectionsFor(role: string | null | undefined): string[] {
+  return (role && ADMIN_SECTIONS[role]) || [];
+}
+
+export function createSession(username: string, role: string, res: Response): void {
   const token = randomUUID();
-  sessions.set(token, { username, ts: Date.now() });
+  sessions.set(token, { username, role, ts: Date.now() });
   res.cookie(COOKIE, token, { httpOnly: true, sameSite: "lax", maxAge: TTL });
 }
 
@@ -22,7 +36,7 @@ export function destroySession(req: Request, res: Response): void {
   res.clearCookie(COOKIE);
 }
 
-export function currentAdmin(req: Request): string | null {
+function currentSession(req: Request): AdminSession | null {
   const t = readCookie(req, COOKIE);
   if (!t) return null;
   const s = sessions.get(t);
@@ -31,7 +45,15 @@ export function currentAdmin(req: Request): string | null {
     sessions.delete(t);
     return null;
   }
-  return s.username;
+  return s;
+}
+
+export function currentAdmin(req: Request): string | null {
+  return currentSession(req)?.username ?? null;
+}
+
+export function currentAdminRole(req: Request): string | null {
+  return currentSession(req)?.role ?? null;
 }
 
 function readCookie(req: Request, name: string): string | null {
@@ -70,21 +92,28 @@ export function searchBar(tableSel: string, placeholder: string, rightHtml = "")
   </div>`;
 }
 
-/** Renderiza una página completa con navegación. */
-export function page(title: string, body: string, admin?: string | null): string {
+/** Renderiza una página completa con navegación (filtrada por el rol del admin). */
+export function page(title: string, body: string, admin?: string | null, role?: string | null): string {
+  // Si hay admin pero no se pasó rol, se asume acceso completo (retrocompat).
+  const sections = admin ? (role != null ? adminSectionsFor(role) : ADMIN_SECTIONS.superadmin) : [];
+  const linkDefs: { href: string; label: string; section?: string }[] = [
+    { href: "/admin", label: "Inicio" },
+    { href: "/admin/users", label: "Usuarios", section: "users" },
+    { href: "/admin/roles", label: "Roles", section: "roles" },
+    { href: "/admin/companies", label: "Empresas", section: "companies" },
+    { href: "/admin/audit", label: "Auditoría", section: "audit" },
+  ];
+  const links = linkDefs
+    .filter((l) => !l.section || sections.includes(l.section))
+    .map((l) => `<a href="${l.href}">${l.label}</a>`)
+    .join("");
   const nav = admin
     ? `<nav>
         <a href="/admin" class="brand">
           <img src="/assets/icon-32.png" alt="" onerror="this.style.display='none'"/>
           <span><strong>SAP B1</strong><small>Administración</small></span>
         </a>
-        <div class="links">
-          <a href="/admin">Inicio</a>
-          <a href="/admin/users">Usuarios</a>
-          <a href="/admin/roles">Roles</a>
-          <a href="/admin/companies">Empresas</a>
-          <a href="/admin/audit">Auditoría</a>
-        </div>
+        <div class="links">${links}</div>
         <span class="spacer"></span>
         <span class="who">${esc(admin)}</span>
         <a href="/admin/logout" class="logout">Salir</a>

@@ -11,7 +11,7 @@ import {
 } from "../db/repo.js";
 import { audit } from "../audit/logger.js";
 import { sendMail, mailEnabled, generatePassword, credentialsEmail } from "../mail/sendgrid.js";
-import { page, esc, searchBar, createSession, destroySession, currentAdmin } from "./ui.js";
+import { page, esc, searchBar, createSession, destroySession, currentAdmin, currentAdminRole, adminSectionsFor } from "./ui.js";
 
 /** Entidades disponibles para asignar permisos en roles. */
 const ALL_ENTITIES = [...Object.keys(ENTITIES), "Financials"];
@@ -42,11 +42,12 @@ export function createAdminRouter(): express.Router {
     const { username, password } = req.body;
     const rec = findUser(String(username || ""));
     const ok = rec && (await bcrypt.compare(String(password || ""), rec.passwordHash));
-    if (!rec || !ok || rec.active === false || rec.role !== "superadmin") {
+    const hasAdmin = rec && adminSectionsFor(rec.role).length > 0;
+    if (!rec || !ok || rec.active === false || !hasAdmin) {
       audit({ username: String(username || "?"), role: "-", action: "admin:login", outcome: "denied" });
-      return res.redirect("/admin/login?err=" + encodeURIComponent("Credenciales inválidas o sin permiso de superadmin."));
+      return res.redirect("/admin/login?err=" + encodeURIComponent("Credenciales inválidas o sin permiso de administración."));
     }
-    createSession(rec.username, res);
+    createSession(rec.username, rec.role, res);
     audit({ username: rec.username, role: rec.role, action: "admin:login", outcome: "ok" });
     res.redirect("/admin");
   });
@@ -61,28 +62,46 @@ export function createAdminRouter(): express.Router {
     const a = currentAdmin(req);
     if (!a) return res.redirect("/admin/login");
     (req as any).admin = a;
+    (req as any).adminRole = currentAdminRole(req);
     next();
   };
+
+  /** Exige que el rol del admin tenga acceso a una sección; si no, 403. */
+  const need = (section: string) => (req: Request, res: Response, next: NextFunction) => {
+    if (!adminSectionsFor((req as any).adminRole).includes(section)) {
+      return res
+        .status(403)
+        .send(page("Sin acceso", `<div class="card"><h1>Sin acceso</h1><p class="muted">Tu perfil no tiene permiso para esta sección.</p><a class="btn" href="/admin">Volver</a></div>`, (req as any).admin, (req as any).adminRole));
+    }
+    next();
+  };
+
+  // Control de acceso por sección según el rol (superadmin=todo, gestor=users+companies).
+  r.use("/users", guard, need("users"));
+  r.use("/roles", guard, need("roles"));
+  r.use("/companies", guard, need("companies"));
+  r.use("/audit", guard, need("audit"));
 
   // ----------------------------- dashboard -----------------------------
   r.get("/", guard, (req, res) => {
     const admin = (req as any).admin as string;
-    const users = cachedUsers().users.length;
-    const roles = Object.keys(getRoles().roles).length;
-    const comps = getAllCompanies().length;
+    const role = (req as any).adminRole as string;
+    const can = (s: string) => adminSectionsFor(role).includes(s);
+    const cards = [
+      can("users") ? `<div class="card"><h2>${cachedUsers().users.length}</h2><div class="muted">Usuarios</div><a class="btn" href="/admin/users">Gestionar</a></div>` : "",
+      can("roles") ? `<div class="card"><h2>${Object.keys(getRoles().roles).length}</h2><div class="muted">Roles</div><a class="btn" href="/admin/roles">Gestionar</a></div>` : "",
+      can("companies") ? `<div class="card"><h2>${getAllCompanies().length}</h2><div class="muted">Empresas</div><a class="btn" href="/admin/companies">Gestionar</a></div>` : "",
+      can("audit") ? `<div class="card"><h2>📋</h2><div class="muted">Auditoría</div><a class="btn" href="/admin/audit">Ver registros</a></div>` : "",
+    ].join("");
     res.send(page("Inicio", `
       <h1>Administración del conector MCP SAP</h1>
-      <div class="row">
-        <div class="card"><h2>${users}</h2><div class="muted">Usuarios</div><a class="btn" href="/admin/users">Gestionar</a></div>
-        <div class="card"><h2>${roles}</h2><div class="muted">Roles</div><a class="btn" href="/admin/roles">Gestionar</a></div>
-        <div class="card"><h2>${comps}</h2><div class="muted">Empresas</div><a class="btn" href="/admin/companies">Gestionar</a></div>
-        <div class="card"><h2>📋</h2><div class="muted">Auditoría</div><a class="btn" href="/admin/audit">Ver registros</a></div>
-      </div>`, admin));
+      <div class="row">${cards}</div>`, admin, role));
   });
 
   // ------------------------------ usuarios ------------------------------
   r.get("/users", guard, (req, res) => {
     const admin = (req as any).admin as string;
+    const role = (req as any).adminRole as string;
     const rows = cachedUsers().users.map((u) => `
       <tr>
         <td><b>${esc(u.username)}</b><br><span class="muted">${esc(u.fullName ?? "")}</span></td>
@@ -106,22 +125,23 @@ export function createAdminRouter(): express.Router {
       <h1>Usuarios</h1>
       ${flash}
       ${searchBar("#tbl", "Buscar por usuario, correo, rol o empresa…", '<a class="btn" href="/admin/users/new">+ Nuevo usuario</a>')}
-      <table id="tbl"><tr><th>Usuario</th><th>Correo</th><th>Rol</th><th>Empresas</th><th>Activo</th><th></th></tr>${rows}</table>`, admin));
+      <table id="tbl"><tr><th>Usuario</th><th>Correo</th><th>Rol</th><th>Empresas</th><th>Activo</th><th></th></tr>${rows}</table>`, admin, role));
   });
 
   r.get("/users/new", guard, (req, res) => {
-    res.send(page("Nuevo usuario", userForm((req as any).admin, null), (req as any).admin));
+    res.send(page("Nuevo usuario", userForm((req as any).admin, null), (req as any).admin, (req as any).adminRole));
   });
 
   r.get("/users/:username/edit", guard, (req, res) => {
     const u = cachedUsers().users.find((x) => x.username === req.params.username);
     if (!u) return res.redirect("/admin/users");
-    res.send(page("Editar usuario", userForm((req as any).admin, u), (req as any).admin));
+    res.send(page("Editar usuario", userForm((req as any).admin, u), (req as any).admin, (req as any).adminRole));
   });
 
   r.post("/users", guard, async (req, res) => {
     const b = req.body;
     const admin = (req as any).admin as string;
+    const role = (req as any).adminRole as string;
     const username = String(b.username).trim();
     const email = b.email ? String(b.email).trim() : undefined;
     const fullName = b.fullName ? String(b.fullName).trim() : undefined;
@@ -171,6 +191,7 @@ export function createAdminRouter(): express.Router {
   // ------------------------------- roles -------------------------------
   r.get("/roles", guard, (req, res) => {
     const admin = (req as any).admin as string;
+    const role = (req as any).adminRole as string;
     const roles = getRoles().roles;
     const rows = Object.entries(roles).map(([name, def]) => `
       <tr>
@@ -184,14 +205,14 @@ export function createAdminRouter(): express.Router {
     res.send(page("Roles", `
       <h1>Roles</h1>
       ${searchBar("#tbl", "Buscar rol o permiso…", '<a class="btn" href="/admin/roles/new">+ Nuevo rol</a>')}
-      <table id="tbl"><tr><th>Rol</th><th>Permisos</th><th></th></tr>${rows}</table>`, admin));
+      <table id="tbl"><tr><th>Rol</th><th>Permisos</th><th></th></tr>${rows}</table>`, admin, role));
   });
 
-  r.get("/roles/new", guard, (req, res) => res.send(page("Nuevo rol", roleForm(null), (req as any).admin)));
+  r.get("/roles/new", guard, (req, res) => res.send(page("Nuevo rol", roleForm(null), (req as any).admin, (req as any).adminRole)));
   r.get("/roles/:name/edit", guard, (req, res) => {
     const def = getRoles().roles[req.params.name];
     if (!def) return res.redirect("/admin/roles");
-    res.send(page("Editar rol", roleForm({ name: req.params.name, def }), (req as any).admin));
+    res.send(page("Editar rol", roleForm({ name: req.params.name, def }), (req as any).admin, (req as any).adminRole));
   });
 
   r.post("/roles", guard, async (req, res) => {
@@ -218,6 +239,7 @@ export function createAdminRouter(): express.Router {
   // ------------------------------ empresas ------------------------------
   r.get("/companies", guard, (req, res) => {
     const admin = (req as any).admin as string;
+    const role = (req as any).adminRole as string;
     const rows = getAllCompanies().map((c) => `
       <tr><td><b>${esc(c.alias)}</b></td><td>${esc(c.label)}</td><td><code>${esc(c.companyDB)}</code></td>
         <td>${c.sapUser ? `<span class="pill" title="Usuario SAP propio: ${esc(c.sapUser)}">🔑 propia</span>` : '<span class="muted">global</span>'}</td>
@@ -228,14 +250,14 @@ export function createAdminRouter(): express.Router {
     res.send(page("Empresas", `
       <h1>Empresas</h1>
       ${searchBar("#tbl", "Buscar por alias, nombre o CompanyDB…", '<a class="btn" href="/admin/companies/new">+ Nueva empresa</a>')}
-      <table id="tbl"><tr><th>Alias</th><th>Nombre</th><th>CompanyDB</th><th>Credencial SAP</th><th></th></tr>${rows}</table>`, admin));
+      <table id="tbl"><tr><th>Alias</th><th>Nombre</th><th>CompanyDB</th><th>Credencial SAP</th><th></th></tr>${rows}</table>`, admin, role));
   });
 
-  r.get("/companies/new", guard, (req, res) => res.send(page("Nueva empresa", companyForm(null), (req as any).admin)));
+  r.get("/companies/new", guard, (req, res) => res.send(page("Nueva empresa", companyForm(null), (req as any).admin, (req as any).adminRole)));
   r.get("/companies/:alias/edit", guard, (req, res) => {
     const c = getAllCompanies().find((x) => x.alias === req.params.alias);
     if (!c) return res.redirect("/admin/companies");
-    res.send(page("Editar empresa", companyForm(c), (req as any).admin));
+    res.send(page("Editar empresa", companyForm(c), (req as any).admin, (req as any).adminRole));
   });
 
   r.post("/companies", guard, async (req, res) => {
@@ -269,6 +291,7 @@ export function createAdminRouter(): express.Router {
   // ------------------------------ auditoría ------------------------------
   r.get("/audit", guard, async (req, res) => {
     const admin = (req as any).admin as string;
+    const role = (req as any).adminRole as string;
     const q = req.query;
     const filter = {
       username: q.username ? String(q.username) : undefined,
@@ -345,7 +368,7 @@ export function createAdminRouter(): express.Router {
           <tr><th>Fecha</th><th>Usuario</th><th>Empresa</th><th>Acción</th><th>Resultado</th><th>Objeto</th><th>Detalle</th></tr>
           ${rows || '<tr class="no-results"><td colspan="7">Sin eventos</td></tr>'}
         </table>
-      </div>`, admin));
+      </div>`, admin, role));
   });
 
   return r;

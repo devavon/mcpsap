@@ -283,6 +283,15 @@ export async function seedIfEmpty(seed: {
       { entity: "*", operation: "update" },
     ]);
   }
+  // Garantizar rol "gestor": panel limitado (usuarios+empresas) + lectura SAP en Excel.
+  const [{ c: hasGestor }] = await query<{ c: number }>(
+    "SELECT COUNT(*) AS c FROM mcp_roles WHERE name = 'gestor'",
+  );
+  if (hasGestor === 0) {
+    await upsertRole("gestor", "Gestión de usuarios y empresas; consulta de SAP en Excel (solo lectura)", [
+      { entity: "*", operation: "read" },
+    ]);
+  }
 
   const [{ c: nComp }] = await query<{ c: number }>("SELECT COUNT(*) AS c FROM mcp_companies");
   if (nComp === 0) {
