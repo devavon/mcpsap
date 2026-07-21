@@ -658,6 +658,40 @@ WHERE T0."DocDate" >= ? AND T0."DocDate" <= ? AND T0."CANCELED"='N'`,
       params: [f.dateFrom, f.dateTo, f.dateFrom, f.dateTo],
     }),
   },
+  ReporteD104Ventas: {
+    name: "ReporteD104Ventas",
+    label: "Reporte D-104 - Ventas",
+    kind: "salesDoc",
+    description:
+      "Ventas (facturas y notas de crédito de cliente) a nivel documento, con estado, monto bruto, impuesto y total en colones y dólares, por rango de fechas.",
+    filters: [
+      { ...dateFrom, required: true },
+      { ...dateTo, required: true },
+    ],
+    sql: (f) => ({
+      text: `
+SELECT T0."DocEntry", TO_VARCHAR(T0."DocDate",'YYYY-MM-DD') AS "DocDate", TO_VARCHAR(T0."DocDueDate",'YYYY-MM-DD') AS "DocDueDate", T0."NumAtCard",
+       CASE WHEN T0."DocStatus"='O' THEN 'Abierto' WHEN T0."DocStatus"='C' THEN 'Cerrado' ELSE 'Otro' END AS "Estado",
+       T0."CardName",
+       (T0."DocTotal"-T0."VatSum") AS "Monto Bruto Col", (T0."DocTotalSy"-T0."VatSumSy") AS "Monto Bruto Dol",
+       T0."VatSum" AS "Impuesto Col", T0."VatSumSy" AS "Impuesto Dol",
+       T0."DocTotal" AS "Total Col", T0."DocTotalSy" AS "Total Dol",
+       T0."JrnlMemo", T0."Comments"
+FROM OINV T0
+WHERE T0."DocDate" >= ? AND T0."DocDate" <= ? AND T0."CANCELED"='N'
+UNION ALL
+SELECT T0."DocEntry", TO_VARCHAR(T0."DocDate",'YYYY-MM-DD'), TO_VARCHAR(T0."DocDueDate",'YYYY-MM-DD'), T0."NumAtCard",
+       CASE WHEN T0."DocStatus"='O' THEN 'Abierto' WHEN T0."DocStatus"='C' THEN 'Cerrado' ELSE 'Otro' END,
+       T0."CardName",
+       (T0."DocTotal"-T0."VatSum")*-1, (T0."DocTotalSy"-T0."VatSumSy")*-1,
+       T0."VatSum"*-1, T0."VatSumSy"*-1,
+       T0."DocTotal"*-1, T0."DocTotalSy"*-1,
+       T0."JrnlMemo", T0."Comments"
+FROM ORIN T0
+WHERE T0."DocDate" >= ? AND T0."DocDate" <= ? AND T0."CANCELED"='N'`,
+      params: [f.dateFrom, f.dateTo, f.dateFrom, f.dateTo],
+    }),
+  },
   ReporteD104Compras: {
     name: "ReporteD104Compras",
     label: "Reporte D104 - Compras",
