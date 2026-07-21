@@ -510,6 +510,71 @@ ORDER BY M."Cuenta", M."ord", M."Nº Trans.", M."Line"`,
       params: [f.dateFrom, f.dateFrom, f.dateTo, f.cuentaDesde || "", f.cuentaHasta || "ZZZZZZZZZZ"],
     }),
   },
+  ReporteSugef: {
+    name: "ReporteSugef",
+    label: "Reporte Sugef",
+    kind: "journal",
+    description:
+      "Transacciones (ingresos de ventas y egresos de compras) con monto ≥ 10.000 en el periodo, con datos de la empresa y del socio para reporte a Sugef.",
+    filters: [
+      { ...dateFrom, required: true },
+      { ...dateTo, required: true },
+    ],
+    sql: (f) => ({
+      text: `
+SELECT T9."CompnyName"  AS "Nombre completo",
+       'Jurídica'       AS "Tipo de identificación",
+       T9."TaxIdNum"    AS "Número de identificación",
+       T9."CompnyAddr"  AS "Dirección detallada",
+       T9."E_Mail"      AS "Correo electrónico",
+       T9."Phone1"      AS "Número teléfono",
+       T0."CardName"    AS "Nombre completo o razón social",
+       CASE WHEN T0."LicTradNum" LIKE '3-___-%'
+              OR (T0."LicTradNum" NOT LIKE '%-%' AND T0."LicTradNum" LIKE '3%' AND LENGTH(T0."LicTradNum") = 10)
+            THEN 'Jurídica' ELSE 'Física' END AS "Tipo de identificación ",
+       T0."LicTradNum"  AS "Número de identificación ",
+       T2."Street"      AS "Dirección detallada ",
+       T4."E_Mail"      AS "Correo electrónico ",
+       T4."Phone1"      AS "Número teléfono ",
+       'Ingreso'        AS "Tipo de transacción (ingreso o egreso)",
+       T0."NumAtCard"   AS "Número de la transacción",
+       TO_VARCHAR(T0."DocDate",'YYYY-MM-DD') AS "Fecha transacción",
+       T0."DocTotalSy"  AS "Monto de transacción",
+       T0."Comments"    AS "Origen de los fondos (breve descripción)"
+FROM OINV T0
+INNER JOIN OADM T9 ON 1 = 1
+LEFT JOIN CRD1 T2 ON T2."CardCode" = T0."CardCode" AND T2."Address" = T0."PayToCode" AND T2."AdresType" = 'B'
+LEFT JOIN OCRD T4 ON T4."CardCode" = T0."CardCode"
+WHERE T0."DocTotalSy" >= 10000 AND T0."DocDate" >= ? AND T0."DocDate" <= ? AND T0."CANCELED" = 'N'
+UNION ALL
+SELECT T1."CardName",
+       CASE WHEN T1."LicTradNum" LIKE '3-___-%'
+              OR (T1."LicTradNum" NOT LIKE '%-%' AND T1."LicTradNum" LIKE '3%' AND LENGTH(T1."LicTradNum") = 10)
+            THEN 'Jurídica' ELSE 'Física' END,
+       T1."LicTradNum",
+       T3."Street",
+       T5."E_Mail",
+       T5."Phone1",
+       T9."CompnyName",
+       'Jurídica',
+       T9."TaxIdNum",
+       T9."CompnyAddr",
+       T9."E_Mail",
+       T9."Phone1",
+       'Egreso',
+       T1."NumAtCard",
+       TO_VARCHAR(T1."DocDate",'YYYY-MM-DD'),
+       T1."DocTotalSy",
+       T1."Comments"
+FROM OPCH T1
+INNER JOIN OADM T9 ON 1 = 1
+LEFT JOIN CRD1 T3 ON T3."CardCode" = T1."CardCode" AND T3."Address" = T1."PayToCode" AND T3."AdresType" = 'B'
+LEFT JOIN OCRD T5 ON T5."CardCode" = T1."CardCode"
+WHERE T1."DocTotalSy" >= 10000 AND T1."DocDate" >= ? AND T1."DocDate" <= ? AND T1."CANCELED" = 'N'
+ORDER BY 13 DESC, 16 DESC`,
+      params: [f.dateFrom, f.dateTo, f.dateFrom, f.dateTo],
+    }),
+  },
   LibroVentas: {
     name: "LibroVentas",
     label: "Libro de ventas",
