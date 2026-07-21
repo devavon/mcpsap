@@ -28,6 +28,8 @@ function buildFromRaw(raw: CompaniesConfig): Record<string, CompanyDef> {
       label: def.label ?? alias,
       companyDB: def.companyDB,
       url: (def.url ?? config.sap.url).replace(/\/+$/, ""),
+      sapUser: def.sapUser || undefined,
+      sapPassword: def.sapPassword || undefined,
     };
   }
   return data;

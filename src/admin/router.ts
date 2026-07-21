@@ -2,6 +2,7 @@ import express, { type Request, type Response, type NextFunction } from "express
 import bcrypt from "bcryptjs";
 import { findUser, getRoles } from "../auth/store.js";
 import { getAllCompanies } from "../sap/companies.js";
+import { resetSapClient } from "../sap/serviceLayer.js";
 import { ENTITIES } from "../sap/entities.js";
 import type { Operation } from "../types.js";
 import {
@@ -219,6 +220,7 @@ export function createAdminRouter(): express.Router {
     const admin = (req as any).admin as string;
     const rows = getAllCompanies().map((c) => `
       <tr><td><b>${esc(c.alias)}</b></td><td>${esc(c.label)}</td><td><code>${esc(c.companyDB)}</code></td>
+        <td>${c.sapUser ? `<span class="pill" title="Usuario SAP propio: ${esc(c.sapUser)}">🔑 propia</span>` : '<span class="muted">global</span>'}</td>
         <td class="actions">
           <a class="btn sec" href="/admin/companies/${encodeURIComponent(c.alias)}/edit">Editar</a>
           <form method="post" action="/admin/companies/${encodeURIComponent(c.alias)}/delete" onsubmit="return confirm('¿Eliminar ${esc(c.alias)}?')"><button class="danger">Eliminar</button></form>
@@ -226,7 +228,7 @@ export function createAdminRouter(): express.Router {
     res.send(page("Empresas", `
       <h1>Empresas</h1>
       ${searchBar("#tbl", "Buscar por alias, nombre o CompanyDB…", '<a class="btn" href="/admin/companies/new">+ Nueva empresa</a>')}
-      <table id="tbl"><tr><th>Alias</th><th>Nombre</th><th>CompanyDB</th><th></th></tr>${rows}</table>`, admin));
+      <table id="tbl"><tr><th>Alias</th><th>Nombre</th><th>CompanyDB</th><th>Credencial SAP</th><th></th></tr>${rows}</table>`, admin));
   });
 
   r.get("/companies/new", guard, (req, res) => res.send(page("Nueva empresa", companyForm(null), (req as any).admin)));
@@ -238,13 +240,28 @@ export function createAdminRouter(): express.Router {
 
   r.post("/companies", guard, async (req, res) => {
     const b = req.body;
-    await upsertCompany({ alias: String(b.alias).trim(), label: b.label, companyDB: b.companyDB, url: b.url || undefined });
-    audit({ username: (req as any).admin, role: "superadmin", action: "admin:company-upsert", outcome: "ok", target: b.alias });
+    const alias = String(b.alias).trim();
+    // Credenciales SAP propias: el override existe solo si hay usuario. Si la
+    // contraseña viene vacía al editar, se conserva la guardada (no reescribir).
+    const sapUser = b.sapUser ? String(b.sapUser).trim() : "";
+    let sapPassword = b.sapPassword ? String(b.sapPassword) : "";
+    if (!sapUser) {
+      sapPassword = "";
+    } else if (!sapPassword) {
+      sapPassword = getAllCompanies().find((c) => c.alias === alias)?.sapPassword || "";
+    }
+    await upsertCompany({
+      alias, label: b.label, companyDB: b.companyDB, url: b.url || undefined,
+      sapUser: sapUser || undefined, sapPassword: sapPassword || undefined,
+    });
+    resetSapClient(alias); // usar las credenciales/URL nuevas en la próxima consulta
+    audit({ username: (req as any).admin, role: "superadmin", action: "admin:company-upsert", outcome: "ok", target: alias });
     res.redirect("/admin/companies");
   });
 
   r.post("/companies/:alias/delete", guard, async (req, res) => {
     await deleteCompany(req.params.alias);
+    resetSapClient(req.params.alias);
     audit({ username: (req as any).admin, role: "superadmin", action: "admin:company-delete", outcome: "ok", target: req.params.alias });
     res.redirect("/admin/companies");
   });
@@ -444,6 +461,14 @@ function companyForm(c: any | null): string {
         <div><label>CompanyDB (base SAP)</label><input name="companyDB" value="${esc(c?.companyDB ?? "")}" required></div>
         <div><label>URL Service Layer (opcional)</label><input name="url" value="${esc(c?.url ?? "")}" placeholder="usa SAP_SL_URL si se deja vacío"></div>
       </div>
+      <details ${c?.sapUser ? "open" : ""} style="margin-top:6px">
+        <summary style="cursor:pointer;color:var(--brand-2);font-weight:600;font-size:13px">Credenciales SAP propias (opcional)</summary>
+        <p class="muted" style="margin:8px 0">Solo si esta empresa usa un usuario/clave distinto al global. Si se dejan vacíos, usa <code>SAP_USERNAME</code>/<code>SAP_PASSWORD</code>.</p>
+        <div class="row">
+          <div><label>Usuario SAP</label><input name="sapUser" value="${esc(c?.sapUser ?? "")}" autocomplete="off" placeholder="(global si vacío)"></div>
+          <div><label>Contraseña SAP</label><input name="sapPassword" type="password" autocomplete="new-password" placeholder="${c?.sapPassword ? "•••••• (sin cambios si vacío)" : "(global si vacío)"}"></div>
+        </div>
+      </details>
       <div style="margin-top:16px"><button>Guardar</button> <a class="btn sec" href="/admin/companies">Cancelar</a></div>
     </form>`;
 }

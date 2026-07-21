@@ -47,9 +47,10 @@ export async function refreshConfigCache(): Promise<void> {
   }
 
   // Empresas
-  const comps = await query<{ alias: string; label: string; company_db: string; url: string | null }>(
-    "SELECT alias, label, company_db, url FROM mcp_companies",
-  );
+  const comps = await query<{
+    alias: string; label: string; company_db: string; url: string | null;
+    sap_user: string | null; sap_password: string | null;
+  }>("SELECT alias, label, company_db, url, sap_user, sap_password FROM mcp_companies");
   const compMap: Record<string, CompanyDef> = {};
   for (const c of comps) {
     compMap[c.alias] = {
@@ -57,6 +58,8 @@ export async function refreshConfigCache(): Promise<void> {
       label: c.label,
       companyDB: c.company_db,
       url: (c.url || config.sap.url).replace(/\/+$/, ""),
+      sapUser: c.sap_user || undefined,
+      sapPassword: c.sap_password || undefined,
     };
   }
 
@@ -181,11 +184,15 @@ export async function deleteRole(name: string): Promise<void> {
 
 // ----------------------------- CRUD empresas -----------------------------
 
-export async function upsertCompany(c: { alias: string; label: string; companyDB: string; url?: string }): Promise<void> {
+export async function upsertCompany(c: {
+  alias: string; label: string; companyDB: string; url?: string;
+  sapUser?: string; sapPassword?: string;
+}): Promise<void> {
   await query(
-    `INSERT INTO mcp_companies (alias, label, company_db, url) VALUES (:alias, :label, :db, :url)
-     ON DUPLICATE KEY UPDATE label = :label, company_db = :db, url = :url`,
-    { alias: c.alias, label: c.label, db: c.companyDB, url: c.url || null },
+    `INSERT INTO mcp_companies (alias, label, company_db, url, sap_user, sap_password)
+     VALUES (:alias, :label, :db, :url, :su, :sp)
+     ON DUPLICATE KEY UPDATE label = :label, company_db = :db, url = :url, sap_user = :su, sap_password = :sp`,
+    { alias: c.alias, label: c.label, db: c.companyDB, url: c.url || null, su: c.sapUser || null, sp: c.sapPassword || null },
   );
   await refreshConfigCache();
 }

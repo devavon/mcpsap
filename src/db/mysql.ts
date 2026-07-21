@@ -47,7 +47,9 @@ export async function initSchema(): Promise<void> {
        alias VARCHAR(64) PRIMARY KEY,
        label VARCHAR(255) NOT NULL,
        company_db VARCHAR(128) NOT NULL,
-       url VARCHAR(255) NULL
+       url VARCHAR(255) NULL,
+       sap_user VARCHAR(128) NULL,
+       sap_password VARCHAR(255) NULL
      )`,
     `CREATE TABLE IF NOT EXISTS mcp_users (
        username VARCHAR(64) PRIMARY KEY,
@@ -95,6 +97,8 @@ export async function initSchema(): Promise<void> {
  */
 async function migrate(): Promise<void> {
   await addColumnIfMissing("mcp_users", "email", "VARCHAR(255) NULL AFTER full_name");
+  await addColumnIfMissing("mcp_companies", "sap_user", "VARCHAR(128) NULL");
+  await addColumnIfMissing("mcp_companies", "sap_password", "VARCHAR(255) NULL");
 }
 
 async function addColumnIfMissing(table: string, column: string, definition: string): Promise<void> {

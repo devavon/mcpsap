@@ -284,13 +284,26 @@ export function getSapClient(companyAlias: string): ServiceLayerClient {
     client = new ServiceLayerClient({
       url: company.url,
       companyDB: company.companyDB,
-      username: config.sap.username,
-      password: config.sap.password,
+      // Credenciales propias de la empresa si están definidas; si no, la cuenta global.
+      username: company.sapUser || config.sap.username,
+      password: company.sapPassword || config.sap.password,
       rejectUnauthorized: config.sap.rejectUnauthorized,
     });
     clients.set(companyAlias, client);
   }
   return client;
+}
+
+/**
+ * Invalida el cliente en caché de una empresa (para que se recree con las
+ * credenciales/URL nuevas tras editarla en el panel).
+ */
+export function resetSapClient(companyAlias: string): void {
+  const c = clients.get(companyAlias);
+  if (c) {
+    c.logout().catch(() => {});
+    clients.delete(companyAlias);
+  }
 }
 
 /** Cierra todas las sesiones SAP abiertas (al apagar el servidor). */

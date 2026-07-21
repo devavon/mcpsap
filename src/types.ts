@@ -22,10 +22,17 @@ export interface CompanyDef {
   companyDB: string;
   /** URL del Service Layer; si se omite usa SAP_SL_URL global. */
   url: string;
+  /** Usuario SAP propio de la empresa; si se omite usa SAP_USERNAME global. */
+  sapUser?: string;
+  /** Contraseña SAP propia de la empresa; si se omite usa SAP_PASSWORD global. */
+  sapPassword?: string;
 }
 
 export interface CompaniesConfig {
-  companies: Record<string, Omit<CompanyDef, "alias" | "url"> & { url?: string }>;
+  companies: Record<
+    string,
+    Omit<CompanyDef, "alias" | "url"> & { url?: string; sapUser?: string; sapPassword?: string }
+  >;
 }
 
 /** Usuario del MCP (login propio). */
