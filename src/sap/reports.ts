@@ -436,6 +436,7 @@ export const REPORTS: Record<string, ReportDef> = {
 SELECT
   M."Código", M."Cliente", M."Fecha Cont.", M."Fecha Venc.", M."Documento",
   M."Nº Trans.", M."Concepto", M."Cuenta Contrap.", M."Nombre Contrap.",
+  M."Administración", M."Cadena De Suplencia", M."Ventas", M."Comercial", M."Mercadeo Estratégico",
   M."Débito ₡", M."Crédito ₡",
   COALESCE(M."OpenCol",0) + SUM(M."NetCol") OVER (PARTITION BY M."Código" ORDER BY M."ord", M."Nº Trans.", M."Line" ROWS UNBOUNDED PRECEDING) AS "Saldo ₡",
   M."Débito $", M."Crédito $",
@@ -449,6 +450,7 @@ FROM (
     T0."TransId" "Nº Trans.", T1."Line_ID" "Line",
     CASE WHEN T1."LineMemo" <> '' THEN T1."LineMemo" ELSE T0."Memo" END "Concepto",
     T1."ContraAct" "Cuenta Contrap.", A."AcctName" "Nombre Contrap.",
+    T1."ProfitCode" "Administración", T1."OcrCode2" "Cadena De Suplencia", T1."OcrCode3" "Ventas", T1."OcrCode4" "Comercial", T1."OcrCode5" "Mercadeo Estratégico",
     T1."Debit" "Débito ₡", T1."Credit" "Crédito ₡", T1."Debit"-T1."Credit" "NetCol",
     T1."SYSDeb" "Débito $", T1."SYSCred" "Crédito $", T1."SYSDeb"-T1."SYSCred" "NetDol",
     op."OpenCol", op."OpenDol"
@@ -482,6 +484,7 @@ ORDER BY M."Código", M."ord", M."Nº Trans.", M."Line"`,
 SELECT
   M."Cuenta", M."Nombre Cuenta", M."Fecha Cont.", M."Fecha Venc.", M."Documento",
   M."Nº Trans.", M."Concepto", M."Contrapartida", M."Nombre Contrap.",
+  M."Administración", M."Cadena De Suplencia", M."Ventas", M."Comercial", M."Mercadeo Estratégico",
   M."Débito ₡", M."Crédito ₡",
   COALESCE(M."OpenCol",0) + SUM(M."NetCol") OVER (PARTITION BY M."Cuenta" ORDER BY M."ord", M."Nº Trans.", M."Line" ROWS UNBOUNDED PRECEDING) AS "Saldo ₡",
   M."Débito $", M."Crédito $",
@@ -494,6 +497,7 @@ FROM (
     T0."TransType" || ' ' || T0."BaseRef" "Documento", T0."TransId" "Nº Trans.", T1."Line_ID" "Line",
     CASE WHEN T1."LineMemo" <> '' THEN T1."LineMemo" ELSE T0."Memo" END "Concepto",
     T1."ContraAct" "Contrapartida", AC."AcctName" "Nombre Contrap.",
+    T1."ProfitCode" "Administración", T1."OcrCode2" "Cadena De Suplencia", T1."OcrCode3" "Ventas", T1."OcrCode4" "Comercial", T1."OcrCode5" "Mercadeo Estratégico",
     T1."Debit" "Débito ₡", T1."Credit" "Crédito ₡", T1."Debit"-T1."Credit" "NetCol",
     T1."SYSDeb" "Débito $", T1."SYSCred" "Crédito $", T1."SYSDeb"-T1."SYSCred" "NetDol",
     op."OpenCol", op."OpenDol"
