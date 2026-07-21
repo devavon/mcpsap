@@ -153,6 +153,20 @@ export function page(title: string, body: string, admin?: string | null): string
   .toolbar .count{color:var(--muted);font-size:12.5px;white-space:nowrap}
   .toolbar .spacer{flex:1}
 
+  /* ---- Selector de empresas (checkboxes) ---- */
+  .cpick{border:1px solid var(--bd-strong);border-radius:var(--r-sm);overflow:hidden;margin-top:4px}
+  .cpick-toolbar{display:flex;gap:8px;align-items:center;padding:8px;background:#f5f7f9;border-bottom:1px solid var(--bd);flex-wrap:wrap}
+  .cpick-toolbar .cs{position:relative;flex:1;min-width:170px}
+  .cpick-toolbar .cs input{padding-left:32px;height:34px}
+  .cpick-toolbar .cs svg{position:absolute;left:9px;top:50%;transform:translateY(-50%);color:var(--muted-2);pointer-events:none}
+  .cpick-toolbar .btn{padding:6px 12px;font-size:13px}
+  .cpick-list{max-height:290px;overflow:auto;padding:6px;display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:2px}
+  .cpick-item{display:flex;align-items:center;gap:9px;padding:8px 10px;border-radius:6px;cursor:pointer;font-size:13px;margin:0;font-weight:400;color:var(--ink)}
+  .cpick-item:hover{background:#eef6ec}
+  .cpick-item input{width:auto;flex:0 0 auto;accent-color:var(--brand-2)}
+  .cpick-item.on{background:#e7f6ec}
+  .cpick-empty{padding:18px;text-align:center;color:var(--muted-2);grid-column:1/-1}
+
   /* ---- Forms ---- */
   label{display:block;font-size:12.5px;margin:12px 0 5px;font-weight:600;color:var(--muted)}
   input,select,textarea{width:100%;padding:9px 11px;border:1px solid var(--bd-strong);border-radius:var(--r-sm);font-size:14px;font-family:inherit;color:var(--ink);background:#fff;transition:border-color .12s,box-shadow .12s}

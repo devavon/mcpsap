@@ -361,14 +361,55 @@ function userForm(_admin: string, u: any | null): string {
       <label><input type="checkbox" name="active" ${u?.active === false ? "" : "checked"} style="width:auto"> Activo</label>
       <label><input type="checkbox" name="allCompanies" id="allc" ${(!u || u.companies === "*") ? "checked" : ""} style="width:auto" onchange="document.getElementById('cbox').style.display=this.checked?'none':'block'"> Acceso a TODAS las empresas</label>
       <div id="cbox" style="display:${(!u || u.companies === "*") ? "none" : "block"}">
-        <label>Empresas permitidas</label>
-        <select name="companies" multiple size="10">
-          ${companies.map((c) => `<option value="${esc(c.alias)}" ${sel.includes(c.alias) ? "selected" : ""}>${esc(c.alias)} — ${esc(c.label)}</option>`).join("")}
-        </select>
-        <span class="muted">Ctrl/Cmd para seleccionar varias.</span>
+        <label>Empresas permitidas <span id="cpickCount" class="muted"></span></label>
+        <div class="cpick">
+          <div class="cpick-toolbar">
+            <div class="cs">
+              <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><circle cx="8.5" cy="8.5" r="5"/><path d="M12.5 12.5l4 4"/></svg>
+              <input type="search" id="cpickSearch" placeholder="Buscar empresa por alias o nombre…" autocomplete="off">
+            </div>
+            <button type="button" class="btn sec" onclick="cpickAll(true)">Todas</button>
+            <button type="button" class="btn sec" onclick="cpickAll(false)">Ninguna</button>
+          </div>
+          <div class="cpick-list" id="cpickList">
+            ${companies
+              .map(
+                (c) => `<label class="cpick-item${sel.includes(c.alias) ? " on" : ""}">
+              <input type="checkbox" name="companies" value="${esc(c.alias)}" ${sel.includes(c.alias) ? "checked" : ""}>
+              <span><b>${esc(c.alias)}</b>${c.label && c.label !== c.alias ? ` <span class="muted">${esc(c.label)}</span>` : ""}</span>
+            </label>`,
+              )
+              .join("")}
+          </div>
+        </div>
+        <span class="muted">Marca las empresas a las que el usuario tendrá acceso. "Todas/Ninguna" aplica sobre lo filtrado.</span>
       </div>
       <div style="margin-top:16px"><button>Guardar</button> <a class="btn sec" href="/admin/users">Cancelar</a></div>
-    </form>`;
+    </form>
+    <script>
+      (function(){
+        var list=document.getElementById('cpickList'); if(!list) return;
+        var search=document.getElementById('cpickSearch');
+        var count=document.getElementById('cpickCount');
+        var items=Array.prototype.slice.call(list.querySelectorAll('.cpick-item'));
+        function upd(){
+          var n=0; items.forEach(function(it){var on=it.querySelector('input').checked; it.classList.toggle('on',on); if(on)n++;});
+          count.textContent='· '+n+' seleccionada'+(n===1?'':'s');
+        }
+        window.cpickAll=function(state){
+          items.forEach(function(it){ if(it.style.display!=='none') it.querySelector('input').checked=state; });
+          upd();
+        };
+        search.addEventListener('input',function(){
+          var q=search.value.trim().toLowerCase(), shown=0;
+          items.forEach(function(it){var m=!q||it.textContent.toLowerCase().indexOf(q)>-1; it.style.display=m?'':'none'; if(m)shown++;});
+          var e=list.querySelector('.cpick-empty');
+          if(shown===0){ if(!e){e=document.createElement('div');e.className='cpick-empty';e.textContent='Sin coincidencias';list.appendChild(e);} e.style.display=''; }
+          else if(e){ e.style.display='none'; }
+        });
+        list.addEventListener('change',upd); upd();
+      })();
+    </script>`;
 }
 
 function roleForm(role: { name: string; def: any } | null): string {
