@@ -658,6 +658,42 @@ WHERE T0."DocDate" >= ? AND T0."DocDate" <= ? AND T0."CANCELED"='N'`,
       params: [f.dateFrom, f.dateTo, f.dateFrom, f.dateTo],
     }),
   },
+  CentroCostoGeneral: {
+    name: "CentroCostoGeneral",
+    label: "Reporte por centro de costo (General)",
+    kind: "journal",
+    description:
+      "Movimientos de asientos de cuentas de gasto (6-…) con las dimensiones de centro de costo, en colones y dólares, por rango de fechas.",
+    filters: [
+      { ...dateFrom, required: true },
+      { ...dateTo, required: true },
+    ],
+    sql: (f) => ({
+      text: `
+SELECT
+    T0."TransId",
+    TO_VARCHAR(T1."RefDate",'YYYY-MM-DD') AS "Fecha",
+    T1."LineMemo",
+    T1."Ref3Line" AS "Proveedor",
+    T1."Account",
+    T2."AcctName",
+    T1."Debit" - T1."Credit" AS "Colones",
+    T1."SYSDeb" - T1."SYSCred" AS "Dolares",
+    T1."ProfitCode" AS "Administración",
+    T1."OcrCode2" AS "Cadena De Suplencia",
+    T1."OcrCode3" AS "Ventas",
+    T1."OcrCode4" AS "Comercial",
+    T1."OcrCode5" AS "Mercadeo Estratégico",
+    T1."Ref1" AS "Ref1",
+    T1."Ref2" AS "Ref2",
+    T1."Ref3Line" AS "Ref3"
+FROM OJDT T0
+INNER JOIN JDT1 T1 ON T0."TransId" = T1."TransId"
+INNER JOIN OACT T2 ON T1."Account" = T2."AcctCode"
+WHERE T0."RefDate" >= ? AND T0."RefDate" <= ? AND T1."Account" LIKE '6-%'`,
+      params: [f.dateFrom, f.dateTo],
+    }),
+  },
   ReporteD104Ventas: {
     name: "ReporteD104Ventas",
     label: "Reporte D-104 - Ventas",
