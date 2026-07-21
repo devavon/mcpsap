@@ -575,6 +575,48 @@ ORDER BY 13 DESC, 16 DESC`,
       params: [f.dateFrom, f.dateTo, f.dateFrom, f.dateTo],
     }),
   },
+  VentasPorLineaCC: {
+    name: "VentasPorLineaCC",
+    label: "VENTAS POR LINEA Y CC",
+    kind: "salesDoc",
+    description:
+      "Facturas y notas de crédito de cliente por línea, con artículo, grupo de socio, centro de costo, impuesto y cuenta, en colones y dólares, por rango de fechas.",
+    filters: [
+      { ...dateFrom, required: true },
+      { ...dateTo, required: true },
+    ],
+    sql: (f) => ({
+      text: `
+SELECT 'Factura' AS "Tipo Documento", T0."DocEntry", TO_VARCHAR(T0."DocDate",'YYYY-MM-DD') AS "DocDate", T0."NumAtCard", T0."CardName",
+       T3."GroupCode", T4."GroupName", T1."OcrCode", T5."OcrName", T1."TaxCode", T1."VatPrcnt" AS "% Impuesto",
+       T1."LineTotal" AS "Monto Bruto Col", T1."VatSum" AS "Impuesto Col", (T1."LineTotal"+T1."VatSum") AS "Total Col",
+       T1."TotalSumSy" AS "Monto Bruto Dol", T1."VatSumSy" AS "Impuesto Dol", (T1."TotalSumSy"+T1."VatSumSy") AS "Total Dol",
+       T1."ItemCode" AS "Código Artículo", T6."ItemName" AS "Nombre Artículo", T1."Dscription", T0."JrnlMemo", T1."AcctCode", T2."AcctName"
+FROM OINV T0
+INNER JOIN INV1 T1 ON T0."DocEntry" = T1."DocEntry"
+INNER JOIN OACT T2 ON T1."AcctCode" = T2."AcctCode"
+INNER JOIN OCRD T3 ON T0."CardCode" = T3."CardCode"
+INNER JOIN OCRG T4 ON T3."GroupCode" = T4."GroupCode"
+INNER JOIN OOCR T5 ON T1."OcrCode" = T5."OcrCode"
+LEFT JOIN OITM T6 ON T1."ItemCode" = T6."ItemCode"
+WHERE T0."DocDate" >= ? AND T0."DocDate" <= ? AND T0."CANCELED" = 'N' AND (T0."DocSubType" <> 'DN' OR T0."DocSubType" IS NULL)
+UNION ALL
+SELECT 'Nota de Crédito', T0."DocEntry", TO_VARCHAR(T0."DocDate",'YYYY-MM-DD'), T0."NumAtCard", T0."CardName",
+       T3."GroupCode", T4."GroupName", T1."OcrCode", T5."OcrName", T1."TaxCode", T1."VatPrcnt"*-1,
+       T1."LineTotal"*-1, T1."VatSum"*-1, (T1."LineTotal"+T1."VatSum")*-1,
+       T1."TotalSumSy"*-1, T1."VatSumSy"*-1, (T1."TotalSumSy"+T1."VatSumSy")*-1,
+       T1."ItemCode", T6."ItemName", T1."Dscription", T0."JrnlMemo", T1."AcctCode", T2."AcctName"
+FROM ORIN T0
+INNER JOIN RIN1 T1 ON T0."DocEntry" = T1."DocEntry"
+INNER JOIN OACT T2 ON T1."AcctCode" = T2."AcctCode"
+INNER JOIN OCRD T3 ON T0."CardCode" = T3."CardCode"
+INNER JOIN OCRG T4 ON T3."GroupCode" = T4."GroupCode"
+INNER JOIN OOCR T5 ON T1."OcrCode" = T5."OcrCode"
+LEFT JOIN OITM T6 ON T1."ItemCode" = T6."ItemCode"
+WHERE T0."DocDate" >= ? AND T0."DocDate" <= ? AND T0."CANCELED" = 'N'`,
+      params: [f.dateFrom, f.dateTo, f.dateFrom, f.dateTo],
+    }),
+  },
   LibroVentas: {
     name: "LibroVentas",
     label: "Libro de ventas",
