@@ -265,51 +265,6 @@ async function generalLedger(client: ServiceLayerClient, f: Record<string, strin
   return { rows, columns: cols };
 }
 
-// ----------------------- Balance de comprobación -----------------------
-
-async function trialBalance(client: ServiceLayerClient, f: Record<string, string>): Promise<ReportResult> {
-  const [jes, names] = await Promise.all([fetchJournal(client, f.dateFrom, f.dateTo), accountNames(client)]);
-
-  const acc = new Map<string, { dC: number; cC: number; dD: number; cD: number }>();
-  for (const je of jes) {
-    for (const l of je.JournalEntryLines ?? []) {
-      const code = l.AccountCode ?? "(sin cuenta)";
-      const a = acc.get(code) ?? { dC: 0, cC: 0, dD: 0, cD: 0 };
-      a.dC += num(l.Debit);
-      a.cC += num(l.Credit);
-      a.dD += num(l.DebitSys);
-      a.cD += num(l.CreditSys);
-      acc.set(code, a);
-    }
-  }
-
-  const rows: Record<string, unknown>[] = [...acc.entries()]
-    .sort((a, b) => a[0].localeCompare(b[0]))
-    .map(([code, a]) => ({
-      Cuenta: code,
-      Nombre: names.get(code) ?? "",
-      "Débito ₡": round2(a.dC),
-      "Crédito ₡": round2(a.cC),
-      "Saldo ₡": round2(a.dC - a.cC),
-      "Débito $": round2(a.dD),
-      "Crédito $": round2(a.cD),
-      "Saldo $": round2(a.dD - a.cD),
-    }));
-
-  // Fila de totales (debe cuadrar a 0 en cada moneda).
-  const sum = (k: string) => round2(rows.reduce((s, r) => s + (r[k] as number), 0));
-  rows.push({
-    Cuenta: "", Nombre: "TOTAL",
-    "Débito ₡": sum("Débito ₡"), "Crédito ₡": sum("Crédito ₡"), "Saldo ₡": sum("Saldo ₡"),
-    "Débito $": sum("Débito $"), "Crédito $": sum("Crédito $"), "Saldo $": sum("Saldo $"),
-  });
-
-  return {
-    rows,
-    columns: ["Cuenta", "Nombre", "Débito ₡", "Crédito ₡", "Saldo ₡", "Débito $", "Crédito $", "Saldo $"],
-  };
-}
-
 // ----------------------- Saldos y antigüedad de socios -----------------------
 
 async function partnerAging(client: ServiceLayerClient, f: Record<string, string>): Promise<ReportResult> {
@@ -412,12 +367,38 @@ export const REPORTS: Record<string, ReportDef> = {
     name: "TrialBalance",
     label: "Balance de comprobación — ₡ y $",
     kind: "journal",
-    description: "Débitos, créditos y saldo por cuenta en el periodo, en colones y dólares (calculado de los asientos).",
+    description:
+      "Todas las cuentas con saldo inicial (acumulado antes del periodo), débitos y créditos del periodo, y saldo final (inicial + déb − créd), en colones y dólares.",
     filters: [
       { ...dateFrom, required: true },
       { ...dateTo, required: true },
     ],
-    run: trialBalance,
+    sql: (f) => ({
+      text: `
+SELECT
+  A."AcctCode" AS "Cuenta",
+  A."AcctName" AS "Nombre",
+  COALESCE(op."OpenCol",0) AS "Saldo inicial ₡",
+  COALESCE(mv."DebCol",0)  AS "Débitos ₡",
+  COALESCE(mv."CredCol",0) AS "Créditos ₡",
+  COALESCE(op."OpenCol",0) + COALESCE(mv."DebCol",0) - COALESCE(mv."CredCol",0) AS "Saldo final ₡",
+  COALESCE(op."OpenDol",0) AS "Saldo inicial $",
+  COALESCE(mv."DebDol",0)  AS "Débitos $",
+  COALESCE(mv."CredDol",0) AS "Créditos $",
+  COALESCE(op."OpenDol",0) + COALESCE(mv."DebDol",0) - COALESCE(mv."CredDol",0) AS "Saldo final $"
+FROM OACT A
+LEFT JOIN ( SELECT X."Account" ac, SUM(X."Debit"-X."Credit") "OpenCol", SUM(X."SYSDeb"-X."SYSCred") "OpenDol"
+            FROM OJDT H INNER JOIN JDT1 X ON H."TransId"=X."TransId"
+            WHERE H."RefDate" < ? GROUP BY X."Account" ) op ON op.ac = A."AcctCode"
+LEFT JOIN ( SELECT X."Account" ac,
+                   SUM(X."Debit") "DebCol", SUM(X."Credit") "CredCol",
+                   SUM(X."SYSDeb") "DebDol", SUM(X."SYSCred") "CredDol"
+            FROM OJDT H INNER JOIN JDT1 X ON H."TransId"=X."TransId"
+            WHERE H."RefDate" BETWEEN ? AND ? GROUP BY X."Account" ) mv ON mv.ac = A."AcctCode"
+WHERE A."Postable" = 'Y'
+ORDER BY A."AcctCode"`,
+      params: [f.dateFrom, f.dateFrom, f.dateTo],
+    }),
   },
   LibroMayor: {
     name: "LibroMayor",
