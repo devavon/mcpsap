@@ -238,7 +238,7 @@ export function createRestRouter(): Router {
         if (report.sql) {
           // Informe SQL directo a HANA, sobre el esquema (CompanyDB) de la empresa.
           const companyDB = getCompany(alias).companyDB;
-          const { text, params } = report.sql(flt);
+          const { text, params } = await report.sql(flt, companyDB);
           const raw = await runHanaQuery(companyDB, text, params);
           if (report.post) {
             const out = report.post(raw, flt);

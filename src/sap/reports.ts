@@ -1,5 +1,6 @@
 import type { ServiceLayerClient } from "./serviceLayer.js";
 import { odataString } from "./entities.js";
+import { tableColumns } from "./hana.js";
 
 /**
  * Informes financieros para contabilidad, construidos sobre el Service Layer.
@@ -52,9 +53,14 @@ export interface ReportDef {
   /**
    * Informe basado en SQL directo a HANA: devuelve el SQL parametrizado (con
    * '?') y los parámetros en orden. Se ejecuta sobre el esquema de la empresa
-   * seleccionada. Requiere HANA configurado.
+   * seleccionada (se recibe como segundo argumento, por si la consulta debe
+   * adaptarse por empresa, ej. verificar si existe un campo de usuario antes
+   * de referenciarlo). Requiere HANA configurado. Puede ser async.
    */
-  sql?: (f: Record<string, string>) => { text: string; params: any[] };
+  sql?: (
+    f: Record<string, string>,
+    companyDB: string,
+  ) => { text: string; params: any[] } | Promise<{ text: string; params: any[] }>;
   /**
    * Post-procesamiento en JS de las filas crudas devueltas por `sql` (ej. para
    * armar jerarquías con subtotales). Si no se define, las filas de `sql` se
@@ -995,12 +1001,39 @@ WHERE T0."DocDate" >= ? AND T0."DocDate" <= ? AND T0."CANCELED"='N'`,
       { ...dateFrom, required: true },
       { ...dateTo, required: true },
     ],
-    sql: (f) => ({
-      text: `
+    sql: async (f, companyDB) => {
+      const [orctCC, ovpmCC, oinvRef, orpcRef, odpoRef, opchRef, odpiRef] = await Promise.all([
+        tableColumns(companyDB, "ORCT"),
+        tableColumns(companyDB, "OVPM"),
+        tableColumns(companyDB, "OINV"),
+        tableColumns(companyDB, "ORPC"),
+        tableColumns(companyDB, "ODPO"),
+        tableColumns(companyDB, "OPCH"),
+        tableColumns(companyDB, "ODPI"),
+      ]);
+      // Campos de usuario (UDF) que no todas las empresas tienen: si faltan, la
+      // columna sale vacía en vez de que la consulta falle con "invalid column name".
+      const orctHasCC = orctCC.has("U_CodCC");
+      const ovpmHasCC = ovpmCC.has("U_CodCC");
+      const nullCode = 'CAST(NULL AS NVARCHAR(20))';
+      const nullName = 'CAST(NULL AS NVARCHAR(100))';
+      const orctCodCC = orctHasCC ? `T0."U_CodCC"` : nullCode;
+      const orctNomCC = orctHasCC ? `T0."U_NomCC"` : nullName;
+      const ovpmCodCC = ovpmHasCC ? `T0."U_CodCC"` : nullCode;
+      const ovpmNomCC = ovpmHasCC ? `T0."U_NomCC"` : nullName;
+      const ovpmCodCC_T3 = ovpmHasCC ? `T3."U_CodCC"` : nullCode;
+      const ovpmCodCCJoin = ovpmHasCC ? `T3."U_CodCC" = T4."OcrCode"` : "1=0";
+      const nullRef = 'CAST(NULL AS NVARCHAR(50))';
+      const oinvRefCastCol = oinvRef.has("U_Ref4Cast") ? `T2."U_Ref4Cast"` : nullRef;
+      const orpcRefCastCol = orpcRef.has("U_Ref4Cast") ? `T2."U_Ref4Cast"` : nullRef;
+      const odpoRefCastCol = odpoRef.has("U_Ref4Cast") ? `T2."U_Ref4Cast"` : nullRef;
+      const opchRefCastCol = opchRef.has("U_Ref4Cast") ? `T2."U_Ref4Cast"` : nullRef;
+      const odpiRefCastCol = odpiRef.has("U_Ref4Cast") ? `T2."U_Ref4Cast"` : nullRef;
+      const text = `
 --Pagos recibidos facturas
 SELECT DISTINCT T0."DocNum" AS "NumPago",T0."DocDate" AS "Fecha de Pago", T2."DocNum",
 T3."OcrCode" "Centro Costo", T4."OcrName" "Nombre CC",
-T0."CardCode",T0."CardName" AS "Proveedor", T0."TrsfrAcct", T5."AcctName", T2."U_Ref4Cast",T7."NumAtCard",T3."LineNum", T3."Dscription",
+T0."CardCode",T0."CardName" AS "Proveedor", T0."TrsfrAcct", T5."AcctName", ${oinvRefCastCol},T7."NumAtCard",T3."LineNum", T3."Dscription",
 T2."JrnlMemo", T0."JrnlMemo",
 CASE WHEN T2."DocCur" = 'COL' THEN T3."LineTotal"/T0."SysRate" ELSE T3."TotalSumSy" END "Monto Dólares",
 CASE WHEN T2."DocCur" = 'COL'
@@ -1134,7 +1167,7 @@ UNION ALL
 --Pagos recibidos NC Proveedores
 SELECT DISTINCT T0."DocNum" AS "NumPago",T0."DocDate" AS "Fecha de Pago", T2."DocNum",
 T3."OcrCode" "Centro Costo", T4."OcrName" "Nombre CC",
-T0."CardCode",T0."CardName" AS "Proveedor", T0."TrsfrAcct", T5."AcctName", T2."U_Ref4Cast",T7."NumAtCard",T3."LineNum", T3."Dscription",
+T0."CardCode",T0."CardName" AS "Proveedor", T0."TrsfrAcct", T5."AcctName", ${orpcRefCastCol},T7."NumAtCard",T3."LineNum", T3."Dscription",
 T2."JrnlMemo", T0."JrnlMemo",
 CASE WHEN T2."DocCur" = 'COL' THEN T3."LineTotal"/T0."SysRate" ELSE T3."TotalSumSy" END "Monto Dólares",
 CASE WHEN T2."DocCur" = 'COL'
@@ -1267,8 +1300,8 @@ UNION ALL
 
 --Pago a cuenta
 SELECT DISTINCT T0."DocNum" AS "NumPago",T0."DocDate" AS "Fecha de Pago", T2."DocNum",
-T0."U_CodCC" "Centro Costo", T0."U_NomCC" "Nombre CC",
-T0."CardCode",T0."CardName" AS "Proveedor", T0."TrsfrAcct", T5."AcctName", T2."U_Ref4Cast",T7."NumAtCard",T3."LineNum", T3."Dscription",
+${orctCodCC} "Centro Costo", ${orctNomCC} "Nombre CC",
+T0."CardCode",T0."CardName" AS "Proveedor", T0."TrsfrAcct", T5."AcctName", ${oinvRefCastCol},T7."NumAtCard",T3."LineNum", T3."Dscription",
 T2."JrnlMemo", T0."JrnlMemo",
 CASE WHEN T2."DocCur" = 'COL' THEN T3."LineTotal"/T0."SysRate" ELSE T0."TrsfrSumSy" END "Monto Dólares",
 0 "Anticipo $ Pro.",
@@ -1294,7 +1327,7 @@ UNION ALL
 --Trae las Solicitudes de Pago PROVEEDORES
 SELECT DISTINCT T0."DocNum" AS "NumPago",T0."DocDate" AS "Fecha de Pago", T2."DocNum",
 T3."OcrCode" "Centro Costo", T4."OcrName" "Nombre CC",
-T0."CardCode",T0."CardName" AS "Proveedor", T0."TrsfrAcct", T5."AcctName", T2."U_Ref4Cast",T7."NumAtCard",T3."LineNum", T3."Dscription",
+T0."CardCode",T0."CardName" AS "Proveedor", T0."TrsfrAcct", T5."AcctName", ${odpoRefCastCol},T7."NumAtCard",T3."LineNum", T3."Dscription",
 T2."JrnlMemo", T0."JrnlMemo",
 CASE WHEN T2."DocCur" = 'COL' THEN (T3."LineTotal"/T0."SysRate")*-1 ELSE T3."TotalSumSy"*-1 END "Monto Dólares",
 CASE WHEN T2."DpmPrcnt" = 100
@@ -1432,8 +1465,8 @@ UNION ALL
 
 --Pago a cuenta
 SELECT DISTINCT T0."DocNum" AS "NumPago",T0."DocDate" AS "Fecha de Pago", T2."DocNum",
-T0."U_CodCC" "Centro Costo", T0."U_NomCC" "Nombre CC",
-T0."CardCode",T0."CardName" AS "Proveedor", T0."TrsfrAcct", T5."AcctName", T2."U_Ref4Cast",T7."NumAtCard",T3."LineNum", T3."Dscription",
+${ovpmCodCC} "Centro Costo", ${ovpmNomCC} "Nombre CC",
+T0."CardCode",T0."CardName" AS "Proveedor", T0."TrsfrAcct", T5."AcctName", ${opchRefCastCol},T7."NumAtCard",T3."LineNum", T3."Dscription",
 T2."JrnlMemo", T0."JrnlMemo",
 CASE WHEN T2."DocCur" = 'COL' THEN (T3."LineTotal"/T0."SysRate")*-1 ELSE T0."TrsfrSumSy"*-1 END "Monto Dólares",
 0 "Anticipo $ Pro.",
@@ -1458,8 +1491,8 @@ UNION ALL
 
 --Pago a cuenta Traslados entre Bancos
 SELECT DISTINCT T0."DocNum" AS "NumPago",T0."DocDate" AS "Fecha de Pago", T2."DocNum",
-T0."U_CodCC" "Centro Costo", T0."U_NomCC" "Nombre CC",
-T0."CardCode",T0."CardName" AS "Proveedor", T0."CardCode", T5."AcctName", T2."U_Ref4Cast",T7."NumAtCard",T3."LineNum", T3."Dscription",
+${ovpmCodCC} "Centro Costo", ${ovpmNomCC} "Nombre CC",
+T0."CardCode",T0."CardName" AS "Proveedor", T0."CardCode", T5."AcctName", ${opchRefCastCol},T7."NumAtCard",T3."LineNum", T3."Dscription",
 T2."JrnlMemo", T0."JrnlMemo",
 CASE WHEN T2."DocCur" = 'COL' THEN (T3."LineTotal"/T0."SysRate")*-1 ELSE T0."TrsfrSumSy" END "Monto Dólares",
 0 "Anticipo $ Pro.",
@@ -1505,7 +1538,7 @@ UNION ALL
 --Trae las Solicitudes de Pago CLIENTES
 SELECT DISTINCT T0."DocNum" AS "NumPago",T0."DocDate" AS "Fecha de Pago", T2."DocNum",
 T3."OcrCode" "Centro Costo", T4."OcrName" "Nombre CC",
-T0."CardCode",T0."CardName" AS "Proveedor", T0."TrsfrAcct", T5."AcctName", T2."U_Ref4Cast",T7."NumAtCard",T3."LineNum", T3."Dscription",
+T0."CardCode",T0."CardName" AS "Proveedor", T0."TrsfrAcct", T5."AcctName", ${odpiRefCastCol},T7."NumAtCard",T3."LineNum", T3."Dscription",
 T2."JrnlMemo", T0."JrnlMemo",
 CASE WHEN T2."DocCur" = 'COL' THEN (T3."LineTotal"/T0."SysRate")*-1 ELSE T3."TotalSumSy"*-1 END "Monto Dólares",
 CASE WHEN T2."DocCur" = 'COL'
@@ -1625,7 +1658,7 @@ UNION ALL
 --Pagos efectuados Facturas
 SELECT DISTINCT T0."DocNum" AS "NumPago",T0."DocDate" AS "Fecha de Pago", T2."DocNum",
 T3."OcrCode" "Centro Costo", T4."OcrName" "Nombre CC",
-T0."CardCode",T0."CardName" AS "Proveedor", T0."TrsfrAcct", T5."AcctName", T2."U_Ref4Cast",T7."NumAtCard",T3."LineNum", T3."Dscription",
+T0."CardCode",T0."CardName" AS "Proveedor", T0."TrsfrAcct", T5."AcctName", ${opchRefCastCol},T7."NumAtCard",T3."LineNum", T3."Dscription",
 T2."JrnlMemo", T0."JrnlMemo",
 CASE WHEN T2."DocCur" = 'COL' THEN T3."LineTotal"/T0."SysRate"*-1 ELSE T3."TotalSumSy"*-1 END "Monto DólaresFA",
 CASE WHEN T2."DocCur" = 'COL'
@@ -1758,7 +1791,7 @@ UNION ALL
 --Pagos efectuados NC
 SELECT DISTINCT T0."DocNum" AS "NumPago",T0."DocDate" AS "Fecha de Pago", T2."DocNum",
 T3."OcrCode" "Centro Costo", T4."OcrName" "Nombre CC",
-T0."CardCode",T0."CardName" AS "Proveedor", T0."TrsfrAcct", T5."AcctName", T2."U_Ref4Cast",T7."NumAtCard",T3."LineNum", T3."Dscription",
+T0."CardCode",T0."CardName" AS "Proveedor", T0."TrsfrAcct", T5."AcctName", ${orpcRefCastCol},T7."NumAtCard",T3."LineNum", T3."Dscription",
 T2."JrnlMemo", T0."JrnlMemo",
 CASE WHEN T2."DocCur" = 'COL' THEN T3."LineTotal"/T0."SysRate"*-1 ELSE T3."TotalSumSy" END "Monto DólaresFA",
 CASE WHEN T2."DocCur" = 'COL'
@@ -1890,7 +1923,7 @@ UNION ALL
 
 --Pago efectuado con asiento a cuenta
 SELECT DISTINCT T0."DocNum" AS "NumPago",T0."DocDate" AS "Fecha de Pago", T3."DocNum",
-T3."U_CodCC" "Centro Costo", T4."OcrName" "Nombre CC",
+${ovpmCodCC_T3} "Centro Costo", T4."OcrName" "Nombre CC",
 T0."CardCode" AS "Código de deudor/acreedor",T0."CardName" AS "Proveedor", T0."TrsfrAcct", T5."AcctName", ' ' AS "Ref4Cast",
 T7."NumAtCard" AS "Número de referencia de deudor/acreedor",
 0 AS "Número de línea", ' ' AS "Descripción artículo/serv.",
@@ -1906,14 +1939,14 @@ FROM OVPM T0
 LEFT JOIN VPM2 T1 ON T0."DocEntry" = T1."DocNum"
 INNER JOIN OJDT T2 ON T1."DocEntry" = T2."TransId"
 INNER JOIN OVPM T3 ON T2."BaseRef" = T3."DocNum"
-LEFT JOIN OOCR T4 ON T3."U_CodCC" = T4."OcrCode"
+LEFT JOIN OOCR T4 ON ${ovpmCodCCJoin}
 LEFT JOIN OACT T5 ON T0."TrsfrAcct" = T5."AcctCode"
 LEFT  JOIN POR1 T6 ON T3."DocEntry" = T6."TrgetEntry"
 LEFT JOIN OPOR T7 ON T6."DocEntry" = T7."DocEntry"
 WHERE T0."TrsfrAcct" Like '1-1-01-02%' AND T0."DocDate" >= ? AND T0."DocDate" <= ? AND T0."Canceled" = 'N'
-AND (T1."InvType" <> 204 OR COALESCE(T1."InvType" , '0') = '0' OR T1."InvType" = '') AND T1."InvType" = 46`,
-      params: Array.from({ length: 11 }, () => [f.dateFrom, f.dateTo]).flat(),
-    }),
+AND (T1."InvType" <> 204 OR COALESCE(T1."InvType" , '0') = '0' OR T1."InvType" = '') AND T1."InvType" = 46`;
+      return { text, params: Array.from({ length: 11 }, () => [f.dateFrom, f.dateTo]).flat() };
+    },
     // Por si alguna fecha viniera con hora (igual que antes con el SP).
     post: (rows) => stripTimeOfDay(rows),
   },

@@ -98,3 +98,19 @@ export async function runHanaQuery<T = Record<string, unknown>>(
     }
   }
 }
+
+/**
+ * Columnas existentes de una tabla en el esquema (CompanyDB) de una empresa.
+ * Útil para informes que referencian campos de usuario (UDF) que no todas
+ * las empresas tienen agregados (ej. BMT_FLUJO_CAJA usaba U_CodCC/U_Ref4Cast,
+ * solo presentes en algunas instalaciones) — así el informe puede omitir esas
+ * columnas (dejarlas vacías) en vez de fallar con "invalid column name".
+ */
+export async function tableColumns(companyDB: string, table: string): Promise<Set<string>> {
+  const rows = await runHanaQuery<{ COLUMN_NAME: string }>(
+    companyDB,
+    `SELECT COLUMN_NAME FROM SYS.TABLE_COLUMNS WHERE SCHEMA_NAME = ? AND TABLE_NAME = ?`,
+    [companyDB, table],
+  );
+  return new Set(rows.map((r) => r.COLUMN_NAME));
+}
