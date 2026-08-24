@@ -55,6 +55,22 @@ function entityFilters(meta: EntityMeta): FilterDef[] {
  * mismos que aplica el conector MCP.
  */
 
+/**
+ * Redondea a 2 decimales todo valor numérico de las filas de un informe, para
+ * que los montos salgan consistentes (sin ruido de coma flotante de HANA
+ * DECIMAL) y summables/ordenables como número real en Excel. No toca texto,
+ * fechas ni otros tipos — solo valores ya numéricos.
+ */
+function roundAmounts(rows: Record<string, unknown>[]): Record<string, unknown>[] {
+  for (const r of rows) {
+    for (const k of Object.keys(r)) {
+      const v = r[k];
+      if (typeof v === "number" && Number.isFinite(v)) r[k] = Math.round(v * 100) / 100;
+    }
+  }
+  return rows;
+}
+
 /** Extrae el Bearer token de la cabecera Authorization. */
 function bearer(req: Request): string | undefined {
   const h = req.headers.authorization;
@@ -223,13 +239,21 @@ export function createRestRouter(): Router {
           // Informe SQL directo a HANA, sobre el esquema (CompanyDB) de la empresa.
           const companyDB = getCompany(alias).companyDB;
           const { text, params } = report.sql(flt);
-          rows = await runHanaQuery(companyDB, text, params);
-          columns = rows.length ? Object.keys(rows[0]) : null;
+          const raw = await runHanaQuery(companyDB, text, params);
+          if (report.post) {
+            const out = report.post(raw, flt);
+            rows = out.rows;
+            columns = out.columns ?? null;
+          } else {
+            rows = raw;
+            columns = rows.length ? Object.keys(rows[0]) : null;
+          }
         } else {
           const out = await report.run!(client, flt);
           rows = out.rows;
           columns = out.columns ?? null;
         }
+        rows = roundAmounts(rows);
 
         audit({
           username: req.user!.username,

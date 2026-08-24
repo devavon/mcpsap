@@ -167,6 +167,19 @@ export const ENTITIES: Record<string, EntityMeta> = {
     searchFields: ["Memo", "Reference"],
     dateField: "ReferenceDate",
   },
+  ChartOfAccounts: {
+    resource: "ChartOfAccounts",
+    label: "Plan de cuentas",
+    kind: "master",
+    keyField: "Code",
+    keyIsString: true,
+    defaultSelect: ["Code", "Name", "AcctCurrency"],
+    searchFields: ["Code", "Name"],
+    // Es un catálogo contable: se rige por el mismo permiso que los informes
+    // financieros (así, quien puede correr un informe con filtro de cuenta,
+    // también puede cargar el plan de cuentas para el desplegable).
+    permEntity: "Financials",
+  },
 };
 
 export function getEntity(name: string): EntityMeta {
