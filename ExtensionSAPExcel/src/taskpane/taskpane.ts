@@ -303,9 +303,9 @@ function fieldFor(d: FilterDef): HTMLElement {
     inp.type = "text";
     inp.className = "control";
     if (d.type === "date") {
-      inp.placeholder = "AAAA-MM-DD";
+      inp.placeholder = "DD/MM/AA";
       inp.inputMode = "numeric";
-      inp.maxLength = 10;
+      inp.maxLength = 8;
       inp.autocomplete = "off";
       inp.addEventListener("input", () => (inp.value = maskDate(inp.value)));
     } else if (d.placeholder) {
@@ -318,18 +318,39 @@ function fieldFor(d: FilterDef): HTMLElement {
   return wrap;
 }
 
-/* ---------------- fechas ---------------- */
+/* ---------------- fechas ----------------
+ * En pantalla el usuario ve/escribe DD/MM/AA (año de 2 dígitos); hacia el
+ * backend siempre se manda YYYY-MM-DD (formato que esperan las consultas
+ * SQL). La conversión ocurre solo al armar los parámetros de la consulta
+ * (toApiFilters); el valor "de pantalla" es el que se guarda/restaura.
+ */
 function maskDate(v: string): string {
-  const n = v.replace(/\D/g, "").slice(0, 8);
-  const p = [n.slice(0, 4)];
+  const n = v.replace(/\D/g, "").slice(0, 6);
+  const p = [n.slice(0, 2)];
+  if (n.length > 2) p.push(n.slice(2, 4));
   if (n.length > 4) p.push(n.slice(4, 6));
-  if (n.length > 6) p.push(n.slice(6, 8));
-  return p.join("-");
+  return p.join("/");
+}
+
+/** DD/MM/AA (pantalla) -> YYYY-MM-DD (API). Asume siglo 20xx. Si no calza el patrón, se manda tal cual. */
+function dmyToIso(v: string): string {
+  const m = /^(\d{2})\/(\d{2})\/(\d{2})$/.exec(v);
+  if (!m) return v;
+  const [, d, mo, y] = m;
+  return `20${y}-${mo}-${d}`;
+}
+
+/** Convierte los valores de filtros a lo que espera la API (fechas -> YYYY-MM-DD). */
+function toApiFilters(values: Record<string, string>): Record<string, string> {
+  const dateKeys = new Set((currentEntity()?.filters ?? []).filter((f) => f.type === "date").map((f) => f.key));
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(values)) out[k] = dateKeys.has(k) ? dmyToIso(v) : v;
+  return out;
 }
 
 function fmtDate(d: Date): string {
   const z = (x: number) => String(x).padStart(2, "0");
-  return `${d.getFullYear()}-${z(d.getMonth() + 1)}-${z(d.getDate())}`;
+  return `${z(d.getDate())}/${z(d.getMonth() + 1)}/${String(d.getFullYear()).slice(-2)}`;
 }
 
 function setRange(fromKey: string, toKey: string, from: Date, to: Date): void {
@@ -395,7 +416,7 @@ function buildParams() {
   const rowLimit = ($("rowLimit") as HTMLSelectElement).value;
   return {
     entity: e.name,
-    filters: getFilterValues(),
+    filters: toApiFilters(getFilterValues()),
     filter: e.type === "entity" ? val("filter") || undefined : undefined,
     orderby: e.type === "entity" ? val("orderby") || undefined : undefined,
     all: e.type === "entity" && rowLimit === "all",
