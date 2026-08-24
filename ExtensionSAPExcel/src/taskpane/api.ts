@@ -24,6 +24,8 @@ export interface FilterDef {
   required?: boolean;
   placeholder?: string;
   options?: { value: string; label: string }[];
+  /** Para "select" sin `options` fijas: entidad desde donde cargar las opciones en vivo (ver EntityMeta). */
+  source?: string;
 }
 
 export interface EntityMeta {

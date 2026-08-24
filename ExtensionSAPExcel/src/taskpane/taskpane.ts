@@ -10,6 +10,9 @@ let lastResult: QueryResult | null = null;
 const LS_QUERY = "sapaddin.lastQuery";
 const PREVIEW_ROWS = 8;
 
+/** Caché de opciones de dropdowns dinámicos (source), por entidad. Se limpia al cambiar de empresa. */
+const sourceOptionsCache = new Map<string, Promise<{ value: string; label: string }[]>>();
+
 /* ---------------- helpers DOM ---------------- */
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const show = (id: string) => $(id).classList.remove("hidden");
@@ -143,6 +146,7 @@ async function onCompanyChange(): Promise<void> {
   const alias = ($("company") as HTMLSelectElement).value;
   clearMsg();
   invalidatePreview();
+  sourceOptionsCache.clear(); // socios/cuentas son distintos por empresa
   try {
     await api.selectCompany(alias);
     setStatus(true, alias);
@@ -151,6 +155,38 @@ async function onCompanyChange(): Promise<void> {
   } catch (e) {
     msg("error", (e as Error).message);
   }
+}
+
+/**
+ * Carga (y cachea) las opciones {value,label} de un filtro "select" dinámico,
+ * a partir de la entidad indicada en `source` (ej. "BusinessPartners",
+ * "ChartOfAccounts"). El valor es el keyField de la entidad; la etiqueta
+ * combina el keyField con el otro campo de búsqueda (por convención, el
+ * segundo de `searchFields` es el nombre descriptivo).
+ */
+function loadSourceOptions(source: string): Promise<{ value: string; label: string }[]> {
+  const cached = sourceOptionsCache.get(source);
+  if (cached) return cached;
+
+  const promise = (async () => {
+    const meta = entities.find((e) => e.name === source);
+    const keyField = meta?.keyField;
+    if (!keyField) return [];
+    const nameField = meta?.searchFields?.find((f) => f !== keyField) ?? keyField;
+    const result = await api.query({ entity: source, filters: {}, all: true, allColumns: false });
+    const opts = result.rows
+      .map((r) => {
+        const value = String(r[keyField] ?? "").trim();
+        const name = String(r[nameField] ?? "").trim();
+        return { value, label: name && name !== value ? `${value} - ${name}` : value };
+      })
+      .filter((o) => o.value)
+      .sort((a, b) => a.label.localeCompare(b.label));
+    return opts;
+  })();
+
+  sourceOptionsCache.set(source, promise);
+  return promise;
 }
 
 async function onLogout(): Promise<void> {
@@ -224,7 +260,35 @@ function fieldFor(d: FilterDef): HTMLElement {
   wrap.appendChild(label);
 
   let control: HTMLElement;
-  if (d.type === "select") {
+  if (d.type === "select" && d.source) {
+    // Dropdown dinámico (ej. socios de negocio, plan de cuentas): input con
+    // autocompletar contra un <datalist> que se llena en vivo desde `source`.
+    // Se puede dejar vacío (equivale a "todos"/"todas").
+    const listId = `dl-${d.key}`;
+    const inp = document.createElement("input");
+    inp.type = "text";
+    inp.className = "control";
+    inp.setAttribute("list", listId);
+    inp.placeholder = d.placeholder || "Cargando…";
+    inp.autocomplete = "off";
+    const datalist = document.createElement("datalist");
+    datalist.id = listId;
+    wrap.appendChild(datalist);
+    loadSourceOptions(d.source)
+      .then((opts) => {
+        datalist.innerHTML = "";
+        for (const o of opts) {
+          const opt = document.createElement("option");
+          opt.value = o.value;
+          opt.label = o.label;
+          opt.textContent = o.label;
+          datalist.appendChild(opt);
+        }
+        if (inp.placeholder === "Cargando…") inp.placeholder = d.placeholder || "vacío = todos";
+      })
+      .catch((e) => msg("error", `No se pudo cargar "${d.label}": ${(e as Error).message}`));
+    control = inp;
+  } else if (d.type === "select") {
     const s = document.createElement("select");
     s.className = "control";
     for (const o of d.options ?? []) {

@@ -2,7 +2,7 @@
  * Empaqueta el add-in para producción:
  *  1) Toma la URL pública (donde MCPSAP servirá el add-in).
  *  2) Reemplaza las URLs localhost del manifest por esa URL pública.
- *  3) Copia el build (dist/) a ../MCPSAP/public para que el backend lo sirva.
+ *  3) Copia el build (dist/) a ../public (dentro del backend mcpsap) para que lo sirva.
  *
  * Uso:  npm run dist -- https://mcpsap-production-xxxx.up.railway.app
  *   (ejecútalo DESPUÉS de `npm run build`; el script `dist` ya encadena ambos)
@@ -14,7 +14,7 @@ import { fileURLToPath } from "node:url";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = resolve(__dirname, "..");
 const distDir = resolve(root, "dist");
-const publicDir = resolve(root, "..", "MCPSAP", "public");
+const publicDir = resolve(root, "..", "public");
 
 const raw = process.argv[2] || process.env.ADDIN_URL || "";
 const baseUrl = raw.replace(/\/+$/, "");
