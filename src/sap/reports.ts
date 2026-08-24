@@ -989,18 +989,932 @@ WHERE T0."DocDate" >= ? AND T0."DocDate" <= ? AND T0."CANCELED"='N'`,
     name: "FlujoCaja",
     label: "Flujo de caja",
     kind: "payment",
-    description: "Flujo de caja del periodo (procedimiento BMT_FLUJO_CAJA en HANA).",
+    description:
+      "Flujo de caja del periodo: pagos recibidos y efectuados aplicados a documentos, anticipos, solicitudes de pago, traslados entre bancos y diferencial cambiario, en dólares. Antes llamaba al procedimiento BMT_FLUJO_CAJA; ahora es SQL directo (mismo cálculo, extraído de ese procedimiento) para que funcione sin importar si el procedimiento existe en la empresa.",
     filters: [
       { ...dateFrom, required: true },
       { ...dateTo, required: true },
     ],
-    // El SP espera fechas en formato YYYYMMDD (p.ej. '20250501').
     sql: (f) => ({
-      text: "CALL BMT_FLUJO_CAJA(?, ?)",
-      params: [(f.dateFrom || "").replace(/-/g, ""), (f.dateTo || "").replace(/-/g, "")],
+      text: `
+--Pagos recibidos facturas
+SELECT DISTINCT T0."DocNum" AS "NumPago",T0."DocDate" AS "Fecha de Pago", T2."DocNum",
+T3."OcrCode" "Centro Costo", T4."OcrName" "Nombre CC",
+T0."CardCode",T0."CardName" AS "Proveedor", T0."TrsfrAcct", T5."AcctName", T2."U_Ref4Cast",T7."NumAtCard",T3."LineNum", T3."Dscription",
+T2."JrnlMemo", T0."JrnlMemo",
+CASE WHEN T2."DocCur" = 'COL' THEN T3."LineTotal"/T0."SysRate" ELSE T3."TotalSumSy" END "Monto Dólares",
+CASE WHEN T2."DocCur" = 'COL'
+   THEN ((T3."LineTotal"/(Select SUM(X1."LineTotal")
+                         From OINV X0 INNER JOIN INV1 X1 ON X0."DocEntry" = X1."DocEntry"
+                         Where X0."DocNum" = T2."DocNum" AND X0."DocEntry" = T2."DocEntry"
+                         Group By X0."DocNum"))*T2."DpmAmnt" /T0."SysRate")
+   ELSE (T3."TotalSumSy"/(Select SUM(X1."TotalSumSy")
+                          From OINV X0 INNER JOIN INV1 X1 ON X0."DocEntry" = X1."DocEntry"
+                          Where X0."DocNum" = T2."DocNum" AND X0."DocEntry" = T2."DocEntry"
+                          Group By X0."DocNum"))*T2."DpmAmntSC"
+END "Anticipo $ Pro.",
+CASE WHEN T2."DocCur" = 'COL'
+   THEN ((T3."LineTotal"/(Select SUM(X1."LineTotal")
+                         From OINV X0 INNER JOIN INV1 X1 ON X0."DocEntry" = X1."DocEntry"
+                         Where X0."DocNum" = T2."DocNum" AND X0."DocEntry" = T2."DocEntry"
+                         Group By X0."DocNum"))*T2."WTSum" /T0."SysRate")
+   ELSE (T3."TotalSumSy"/(Select SUM(X1."TotalSumSy")
+                          From OINV X0 INNER JOIN INV1 X1 ON X0."DocEntry" = X1."DocEntry"
+                          Where X0."DocNum" = T2."DocNum" AND X0."DocEntry" = T2."DocEntry"
+                          Group By X0."DocNum"))*T2."WTSumSC"
+END "Retención $ Pro.",
+CASE WHEN T2."DocCur" = 'COL'
+   THEN
+      CASE WHEN T2."VatSum" = 0
+         THEN 0
+         ELSE ((T3."LineTotal"/(T2."DocTotal"-T2."VatSum"))*T2."VatSum" /T0."SysRate")
+      END
+   ELSE
+      CASE WHEN T2."VatSumFC" = 0
+         THEN 0
+         ELSE (T3."TotalSumSy"/(T2."DocTotalSy"-T2."VatSumFC"))*T2."VatSumFC"
+      END
+END "Impuesto $ Pro.",
+CASE WHEN T2."DocCur" = 'COL'
+   THEN
+      CASE WHEN T2."DocTotal" = T2."PaidToDate"
+         THEN 0
+         ELSE ((T3."LineTotal"/(T2."DocTotal"))*(T2."DocTotal" - T2."PaidToDate") /T0."SysRate")
+      END
+   ELSE
+      CASE WHEN T2."DocTotalFC" = T2."PaidFC"
+         THEN 0
+         ELSE (T3."TotalSumSy"/(T2."DocTotalFC"))*(T2."DocTotalFC" - T2."PaidFC")
+      END
+END "Saldo $ Pro.",
+--Otras Diferencias
+(
+CASE WHEN T2."DocCur" = 'COL' THEN T3."LineTotal"/T0."SysRate" ELSE T3."TotalSumSy" END-
+CASE WHEN T2."DocCur" = 'COL'
+   THEN ((T3."LineTotal"/(Select SUM(X1."LineTotal")
+                         From OINV X0 INNER JOIN INV1 X1 ON X0."DocEntry" = X1."DocEntry"
+                         Where X0."DocNum" = T2."DocNum" AND X0."DocEntry" = T2."DocEntry"
+                         Group By X0."DocNum"))*T2."DpmAmnt" /T0."SysRate")
+   ELSE (T3."TotalSumSy"/(Select SUM(X1."TotalSumSy")
+                          From OINV X0 INNER JOIN INV1 X1 ON X0."DocEntry" = X1."DocEntry"
+                          Where X0."DocNum" = T2."DocNum" AND X0."DocEntry" = T2."DocEntry"
+                          Group By X0."DocNum"))*T2."DpmAmntSC"
+END-
+CASE WHEN T2."DocCur" = 'COL'
+   THEN ((T3."LineTotal"/(Select SUM(X1."LineTotal")
+                         From OINV X0 INNER JOIN INV1 X1 ON X0."DocEntry" = X1."DocEntry"
+                         Where X0."DocNum" = T2."DocNum" AND X0."DocEntry" = T2."DocEntry"
+                         Group By X0."DocNum"))*T2."WTSum" /T0."SysRate")
+   ELSE (T3."TotalSumSy"/(Select SUM(X1."TotalSumSy")
+                          From OINV X0 INNER JOIN INV1 X1 ON X0."DocEntry" = X1."DocEntry"
+                          Where X0."DocNum" = T2."DocNum" AND X0."DocEntry" = T2."DocEntry"
+                          Group By X0."DocNum"))*T2."WTSumSC"
+END+
+CASE WHEN T2."DocCur" = 'COL'
+   THEN
+      CASE WHEN T2."VatSum" = 0
+         THEN 0
+         ELSE ((T3."LineTotal"/(T2."DocTotal"-T2."VatSum"))*T2."VatSum" /T0."SysRate")
+      END
+   ELSE
+      CASE WHEN T2."VatSumFC" = 0
+         THEN 0
+         ELSE (T3."TotalSumSy"/(T2."DocTotalSy"-T2."VatSumFC"))*T2."VatSumFC"
+      END
+END-
+CASE WHEN T2."DocCur" = 'COL'
+   THEN
+      CASE WHEN T2."DocTotal" = T2."PaidToDate"
+         THEN 0
+         ELSE ((T3."LineTotal"/(T2."DocTotal"))*(T2."DocTotal" - T2."PaidToDate") /T0."SysRate")
+      END
+   ELSE
+      CASE WHEN T2."DocTotalFC" = T2."PaidFC"
+         THEN 0
+         ELSE (T3."TotalSumSy"/(T2."DocTotalFC"))*(T2."DocTotalFC" - T2."PaidFC")
+      END
+END
+)-
+CASE WHEN T2."DocCur" = 'COL'
+   THEN (T3."LineTotal"+T3."VatSum")/(Select SUM(X1."LineTotal"+X1."VatSum")
+                         From OINV X0 INNER JOIN INV1 X1 ON X0."DocEntry" = X1."DocEntry"
+                         Where X0."DocNum" = T2."DocNum" AND X0."DocEntry" = T2."DocEntry"
+                         Group By X0."DocNum")*T1."SumApplied" /T0."SysRate"
+   ELSE (T3."TotalSumSy"+T3."VatSumSy")/(Select SUM(X1."TotalSumSy"+X1."VatSumSy")
+                          From OINV X0 INNER JOIN INV1 X1 ON X0."DocEntry" = X1."DocEntry"
+                          Where X0."DocNum" = T2."DocNum" AND X0."DocEntry" = T2."DocEntry"
+                          Group By X0."DocNum")*T1."AppliedSys"
+END "Otras Diferencias$",
+--Neto
+CASE WHEN T2."DocCur" = 'COL'
+   THEN (T3."LineTotal"+T3."VatSum")/(Select SUM(X1."LineTotal"+X1."VatSum")
+                         From OINV X0 INNER JOIN INV1 X1 ON X0."DocEntry" = X1."DocEntry"
+                         Where X0."DocNum" = T2."DocNum" AND X0."DocEntry" = T2."DocEntry"
+                         Group By X0."DocNum")*T1."SumApplied" /T0."SysRate"
+   ELSE (T3."TotalSumSy"+T3."VatSumSy")/(Select SUM(X1."TotalSumSy"+X1."VatSumSy")
+                          From OINV X0 INNER JOIN INV1 X1 ON X0."DocEntry" = X1."DocEntry"
+                          Where X0."DocNum" = T2."DocNum" AND X0."DocEntry" = T2."DocEntry"
+                          Group By X0."DocNum")*T1."AppliedSys"
+END
+"Neto $"
+FROM ORCT T0
+LEFT JOIN RCT2 T1 ON T0."DocEntry" = T1."DocNum"
+LEFT JOIN OINV T2 ON T1."DocEntry" = T2."DocEntry"
+LEFT JOIN INV1 T3 ON T2."DocEntry" = T3."DocEntry"
+LEFT JOIN OOCR T4 ON T3."OcrCode" = T4."OcrCode"
+LEFT JOIN OACT T5 ON T0."TrsfrAcct" = T5."AcctCode"
+LEFT JOIN POR1 T6 ON T3."DocEntry" = T6."TrgetEntry"
+LEFT JOIN OPOR T7 ON T6."DocEntry" = T7."DocEntry"
+WHERE T0."TrsfrAcct" Like '1-1-01-02%' AND T0."DocDate" >= ? AND T0."DocDate" <= ? AND T0."Canceled" = 'N'
+AND (T1."InvType" <> 204 OR COALESCE(T1."InvType" , '0') = '0' OR T1."InvType" = '')
+AND T0."PayNoDoc"  <> 'Y' AND T0."DocType" <> 'S'
+
+UNION ALL
+
+--Pagos recibidos NC Proveedores
+SELECT DISTINCT T0."DocNum" AS "NumPago",T0."DocDate" AS "Fecha de Pago", T2."DocNum",
+T3."OcrCode" "Centro Costo", T4."OcrName" "Nombre CC",
+T0."CardCode",T0."CardName" AS "Proveedor", T0."TrsfrAcct", T5."AcctName", T2."U_Ref4Cast",T7."NumAtCard",T3."LineNum", T3."Dscription",
+T2."JrnlMemo", T0."JrnlMemo",
+CASE WHEN T2."DocCur" = 'COL' THEN T3."LineTotal"/T0."SysRate" ELSE T3."TotalSumSy" END "Monto Dólares",
+CASE WHEN T2."DocCur" = 'COL'
+   THEN ((T3."LineTotal"/(Select SUM(X1."LineTotal")
+                         From ORPC X0 INNER JOIN RPC1 X1 ON X0."DocEntry" = X1."DocEntry"
+                         Where X0."DocNum" = T2."DocNum" AND X0."DocEntry" = T2."DocEntry"
+                         Group By X0."DocNum"))*T2."DpmAmnt" /T0."SysRate")
+   ELSE (T3."TotalSumSy"/(Select SUM(X1."TotalSumSy")
+                          From ORPC X0 INNER JOIN RPC1 X1 ON X0."DocEntry" = X1."DocEntry"
+                          Where X0."DocNum" = T2."DocNum" AND X0."DocEntry" = T2."DocEntry"
+                          Group By X0."DocNum"))*T2."DpmAmntSC"
+END "Anticipo $ Pro.",
+CASE WHEN T2."DocCur" = 'COL'
+   THEN ((T3."LineTotal"/(Select SUM(X1."LineTotal")
+                         From ORPC X0 INNER JOIN RPC1 X1 ON X0."DocEntry" = X1."DocEntry"
+                         Where X0."DocNum" = T2."DocNum" AND X0."DocEntry" = T2."DocEntry"
+                         Group By X0."DocNum"))*T2."WTSum" /T0."SysRate")
+   ELSE (T3."TotalSumSy"/(Select SUM(X1."TotalSumSy")
+                          From ORPC X0 INNER JOIN RPC1 X1 ON X0."DocEntry" = X1."DocEntry"
+                          Where X0."DocNum" = T2."DocNum" AND X0."DocEntry" = T2."DocEntry"
+                          Group By X0."DocNum"))*T2."WTSumSC"
+END "Retención $ Pro.",
+CASE WHEN T2."DocCur" = 'COL'
+   THEN
+      CASE WHEN T2."VatSum" = 0
+         THEN 0
+         ELSE ((T3."LineTotal"/(T2."DocTotal"-T2."VatSum"))*T2."VatSum" /T0."SysRate")
+      END
+   ELSE
+      CASE WHEN T2."VatSumFC" = 0
+         THEN 0
+         ELSE (T3."TotalSumSy"/(T2."DocTotalSy"-T2."VatSumFC"))*T2."VatSumFC"
+      END
+END "Impuesto $ Pro.",
+CASE WHEN T2."DocCur" = 'COL'
+   THEN
+      CASE WHEN T2."DocTotal" = T2."PaidToDate"
+         THEN 0
+         ELSE ((T3."LineTotal"/(T2."DocTotal"))*(T2."DocTotal" - T2."PaidToDate") /T0."SysRate")
+      END
+   ELSE
+      CASE WHEN T2."DocTotalFC" = T2."PaidFC"
+         THEN 0
+         ELSE (T3."TotalSumSy"/(T2."DocTotalFC"))*(T2."DocTotalFC" - T2."PaidFC")
+      END
+END "Saldo $ Pro.",
+--Otras Diferencias
+(
+CASE WHEN T2."DocCur" = 'COL' THEN T3."LineTotal"/T0."SysRate" ELSE T3."TotalSumSy" END-
+CASE WHEN T2."DocCur" = 'COL'
+   THEN ((T3."LineTotal"/(Select SUM(X1."LineTotal")
+                         From ORPC X0 INNER JOIN RPC1 X1 ON X0."DocEntry" = X1."DocEntry"
+                         Where X0."DocNum" = T2."DocNum" AND X0."DocEntry" = T2."DocEntry"
+                         Group By X0."DocNum"))*T2."DpmAmnt" /T0."SysRate")
+   ELSE (T3."TotalSumSy"/(Select SUM(X1."TotalSumSy")
+                          From ORPC X0 INNER JOIN RPC1 X1 ON X0."DocEntry" = X1."DocEntry"
+                          Where X0."DocNum" = T2."DocNum" AND X0."DocEntry" = T2."DocEntry"
+                          Group By X0."DocNum"))*T2."DpmAmntSC"
+END-
+CASE WHEN T2."DocCur" = 'COL'
+   THEN ((T3."LineTotal"/(Select SUM(X1."LineTotal")
+                         From ORPC X0 INNER JOIN RPC1 X1 ON X0."DocEntry" = X1."DocEntry"
+                         Where X0."DocNum" = T2."DocNum" AND X0."DocEntry" = T2."DocEntry"
+                         Group By X0."DocNum"))*T2."WTSum" /T0."SysRate")
+   ELSE (T3."TotalSumSy"/(Select SUM(X1."TotalSumSy")
+                          From ORPC X0 INNER JOIN RPC1 X1 ON X0."DocEntry" = X1."DocEntry"
+                          Where X0."DocNum" = T2."DocNum" AND X0."DocEntry" = T2."DocEntry"
+                          Group By X0."DocNum"))*T2."WTSumSC"
+END+
+CASE WHEN T2."DocCur" = 'COL'
+   THEN
+      CASE WHEN T2."VatSum" = 0
+         THEN 0
+         ELSE ((T3."LineTotal"/(T2."DocTotal"-T2."VatSum"))*T2."VatSum" /T0."SysRate")
+      END
+   ELSE
+      CASE WHEN T2."VatSumFC" = 0
+         THEN 0
+         ELSE (T3."TotalSumSy"/(T2."DocTotalSy"-T2."VatSumFC"))*T2."VatSumFC"
+      END
+END-
+CASE WHEN T2."DocCur" = 'COL'
+   THEN
+      CASE WHEN T2."DocTotal" = T2."PaidToDate"
+         THEN 0
+         ELSE ((T3."LineTotal"/(T2."DocTotal"))*(T2."DocTotal" - T2."PaidToDate") /T0."SysRate")
+      END
+   ELSE
+      CASE WHEN T2."DocTotalFC" = T2."PaidFC"
+         THEN 0
+         ELSE (T3."TotalSumSy"/(T2."DocTotalFC"))*(T2."DocTotalFC" - T2."PaidFC")
+      END
+END
+)-
+CASE WHEN T2."DocCur" = 'COL'
+   THEN (T3."LineTotal"+T3."VatSum")/(Select SUM(X1."LineTotal"+X1."VatSum")
+                         From ORPC X0 INNER JOIN RPC1 X1 ON X0."DocEntry" = X1."DocEntry"
+                         Where X0."DocNum" = T2."DocNum" AND X0."DocEntry" = T2."DocEntry"
+                         Group By X0."DocNum")*T1."SumApplied" /T0."SysRate"
+   ELSE (T3."TotalSumSy"+T3."VatSumSy")/(Select SUM(X1."TotalSumSy"+X1."VatSumSy")
+                          From ORPC X0 INNER JOIN RPC1 X1 ON X0."DocEntry" = X1."DocEntry"
+                          Where X0."DocNum" = T2."DocNum" AND X0."DocEntry" = T2."DocEntry"
+                          Group By X0."DocNum")*T1."AppliedSys"
+END "Otras Diferencias$",
+--Neto
+CASE WHEN T2."DocCur" = 'COL'
+   THEN (T3."LineTotal"+T3."VatSum")/(Select SUM(X1."LineTotal"+X1."VatSum")
+                         From ORPC X0 INNER JOIN RPC1 X1 ON X0."DocEntry" = X1."DocEntry"
+                         Where X0."DocNum" = T2."DocNum" AND X0."DocEntry" = T2."DocEntry"
+                         Group By X0."DocNum")*T1."SumApplied" /T0."SysRate"
+   ELSE (T3."TotalSumSy"+T3."VatSumSy")/(Select SUM(X1."TotalSumSy"+X1."VatSumSy")
+                          From ORPC X0 INNER JOIN RPC1 X1 ON X0."DocEntry" = X1."DocEntry"
+                          Where X0."DocNum" = T2."DocNum" AND X0."DocEntry" = T2."DocEntry"
+                          Group By X0."DocNum")*T1."AppliedSys"
+END
+"Neto $"
+FROM ORCT T0
+LEFT JOIN RCT2 T1 ON T0."DocEntry" = T1."DocNum"
+LEFT JOIN ORPC T2 ON T1."DocEntry" = T2."DocEntry"
+LEFT JOIN RPC1 T3 ON T2."DocEntry" = T3."DocEntry"
+LEFT JOIN OOCR T4 ON T3."OcrCode" = T4."OcrCode"
+LEFT JOIN OACT T5 ON T0."TrsfrAcct" = T5."AcctCode"
+LEFT JOIN POR1 T6 ON T3."DocEntry" = T6."TrgetEntry"
+LEFT JOIN OPOR T7 ON T6."DocEntry" = T7."DocEntry"
+WHERE T0."TrsfrAcct" Like '1-1-01-02%' AND T0."DocDate" >= ? AND T0."DocDate" <= ? AND T0."Canceled" = 'N'
+AND (T1."InvType" <> 204 OR COALESCE(T1."InvType" , '0') = '0' OR T1."InvType" = '')
+AND T0."PayNoDoc"  <> 'Y' AND T0."DocType" = 'S'
+
+UNION ALL
+
+--Pago a cuenta
+SELECT DISTINCT T0."DocNum" AS "NumPago",T0."DocDate" AS "Fecha de Pago", T2."DocNum",
+T0."U_CodCC" "Centro Costo", T0."U_NomCC" "Nombre CC",
+T0."CardCode",T0."CardName" AS "Proveedor", T0."TrsfrAcct", T5."AcctName", T2."U_Ref4Cast",T7."NumAtCard",T3."LineNum", T3."Dscription",
+T2."JrnlMemo", T0."JrnlMemo",
+CASE WHEN T2."DocCur" = 'COL' THEN T3."LineTotal"/T0."SysRate" ELSE T0."TrsfrSumSy" END "Monto Dólares",
+0 "Anticipo $ Pro.",
+0 "Retención $ Pro.",
+0 "Impuesto $ Pro.",
+0 "Saldo $ Pro.",
+0 "Otras Diferencias$",
+CASE WHEN T2."DocCur" = 'COL' THEN T3."LineTotal"/T0."SysRate" ELSE T0."TrsfrSumSy" END "Neto $"
+FROM ORCT T0
+LEFT JOIN RCT2 T1 ON T0."DocEntry" = T1."DocNum"
+LEFT JOIN OINV T2 ON T1."DocEntry" = T2."DocEntry"
+LEFT JOIN INV1 T3 ON T2."DocEntry" = T3."DocEntry"
+LEFT JOIN OOCR T4 ON T3."OcrCode" = T4."OcrCode"
+LEFT JOIN OACT T5 ON T0."TrsfrAcct" = T5."AcctCode"
+LEFT  JOIN POR1 T6 ON T3."DocEntry" = T6."TrgetEntry"
+LEFT JOIN OPOR T7 ON T6."DocEntry" = T7."DocEntry"
+WHERE T0."TrsfrAcct" Like '1-1-01-02%' AND T0."DocDate" >= ? AND T0."DocDate" <= ? AND T0."Canceled" = 'N'
+AND (T1."InvType" <> 204 OR COALESCE(T1."InvType" , '0') = '0' OR T1."InvType" = '')
+AND T0."PayNoDoc"  = 'Y'
+
+UNION ALL
+
+--Trae las Solicitudes de Pago PROVEEDORES
+SELECT DISTINCT T0."DocNum" AS "NumPago",T0."DocDate" AS "Fecha de Pago", T2."DocNum",
+T3."OcrCode" "Centro Costo", T4."OcrName" "Nombre CC",
+T0."CardCode",T0."CardName" AS "Proveedor", T0."TrsfrAcct", T5."AcctName", T2."U_Ref4Cast",T7."NumAtCard",T3."LineNum", T3."Dscription",
+T2."JrnlMemo", T0."JrnlMemo",
+CASE WHEN T2."DocCur" = 'COL' THEN (T3."LineTotal"/T0."SysRate")*-1 ELSE T3."TotalSumSy"*-1 END "Monto Dólares",
+CASE WHEN T2."DpmPrcnt" = 100
+   THEN 0
+ELSE
+   CASE WHEN T2."DocCur" = 'COL'
+      THEN ((T3."LineTotal"/(Select SUM(X1."LineTotal")
+                         From ODPO X0 INNER JOIN DPO1 X1 ON X0."DocEntry" = X1."DocEntry"
+                         Where X0."DocNum" = T2."DocNum" AND X0."DocEntry" = T2."DocEntry"
+                         Group By X0."DocNum"))*T2."DpmAmnt" /T0."SysRate")*-1
+      ELSE (T3."TotalSumSy"/(Select SUM(X1."TotalSumSy")
+                          From ODPO X0 INNER JOIN DPO1 X1 ON X0."DocEntry" = X1."DocEntry"
+                          Where X0."DocNum" = T2."DocNum" AND X0."DocEntry" = T2."DocEntry"
+                          Group By X0."DocNum"))*T2."DpmAmntSC" *-1
+   END
+END "Anticipo $ Pro.",
+CASE WHEN T2."DocCur" = 'COL'
+   THEN ((T3."LineTotal"/(Select SUM(X1."LineTotal")
+                         From ODPO X0 INNER JOIN DPO1 X1 ON X0."DocEntry" = X1."DocEntry"
+                         Where X0."DocNum" = T2."DocNum" AND X0."DocEntry" = T2."DocEntry"
+                         Group By X0."DocNum"))*T2."WTSum" /T0."SysRate")*-1
+   ELSE (T3."TotalSumSy"/(Select SUM(X1."TotalSumSy")
+                          From ODPO X0 INNER JOIN DPO1 X1 ON X0."DocEntry" = X1."DocEntry"
+                          Where X0."DocNum" = T2."DocNum" AND X0."DocEntry" = T2."DocEntry"
+                          Group By X0."DocNum"))*T2."WTSumSC" *-1
+END "Retención $ Pro.",
+CASE WHEN T2."DocCur" = 'COL'
+   THEN
+      CASE WHEN T2."VatSum" = 0
+         THEN 0
+         ELSE ((T3."LineTotal"/(T2."DocTotal"-T2."VatSum"))*T2."VatSum" /T0."SysRate")*-1
+      END
+   ELSE
+      CASE WHEN T2."VatSumFC" = 0
+         THEN 0
+         ELSE (T3."TotalSumSy"/(T2."DocTotalSy"-T2."VatSumFC"))*T2."VatSumFC" *-1
+      END
+END "Impuesto $ Pro.",
+CASE WHEN T2."DocCur" = 'COL'
+   THEN
+      CASE WHEN T2."DocTotal" = T2."PaidToDate"
+         THEN 0
+         ELSE ((T3."LineTotal"/(T2."DocTotal"))*(T2."DocTotal" - T2."PaidToDate") /T0."SysRate")*-1
+      END
+   ELSE
+      CASE WHEN T2."DocTotalFC" = T2."PaidFC"
+         THEN 0
+         ELSE (T3."TotalSumSy"/(T2."DocTotalFC"))*(T2."DocTotalFC" - T2."PaidFC")*-1
+      END
+END "Saldo $ Pro.",
+(
+CASE WHEN T2."DocCur" = 'COL' THEN T3."LineTotal"/T0."SysRate" ELSE T3."TotalSumSy" END-
+CASE WHEN T2."DocCur" = 'COL'
+   THEN ((T3."LineTotal"/(Select SUM(X1."LineTotal")
+                         From ODPO X0 INNER JOIN DPO1 X1 ON X0."DocEntry" = X1."DocEntry"
+                         Where X0."DocNum" = T2."DocNum" AND X0."DocEntry" = T2."DocEntry"
+                         Group By X0."DocNum"))*T2."DpmAmnt" /T0."SysRate")
+   ELSE (T3."TotalSumSy"/(Select SUM(X1."TotalSumSy")
+                          From ODPO X0 INNER JOIN DPO1 X1 ON X0."DocEntry" = X1."DocEntry"
+                          Where X0."DocNum" = T2."DocNum" AND X0."DocEntry" = T2."DocEntry"
+                          Group By X0."DocNum"))*T2."DpmAmntSC"
+END-
+CASE WHEN T2."DocCur" = 'COL'
+   THEN ((T3."LineTotal"/(Select SUM(X1."LineTotal")
+                         From ODPO X0 INNER JOIN DPO1 X1 ON X0."DocEntry" = X1."DocEntry"
+                         Where X0."DocNum" = T2."DocNum" AND X0."DocEntry" = T2."DocEntry"
+                         Group By X0."DocNum"))*T2."WTSum" /T0."SysRate")
+   ELSE (T3."TotalSumSy"/(Select SUM(X1."TotalSumSy")
+                          From ODPO X0 INNER JOIN DPO1 X1 ON X0."DocEntry" = X1."DocEntry"
+                          Where X0."DocNum" = T2."DocNum" AND X0."DocEntry" = T2."DocEntry"
+                          Group By X0."DocNum"))*T2."WTSumSC"
+END+
+CASE WHEN T2."DocCur" = 'COL'
+   THEN
+      CASE WHEN T2."VatSum" = 0
+         THEN 0
+         ELSE ((T3."LineTotal"/(T2."DocTotal"-T2."VatSum"))*T2."VatSum" /T0."SysRate")
+      END
+   ELSE
+      CASE WHEN T2."VatSumFC" = 0
+         THEN 0
+         ELSE (T3."TotalSumSy"/(T2."DocTotalSy"-T2."VatSumFC"))*T2."VatSumFC"
+      END
+END-
+CASE WHEN T2."DocCur" = 'COL'
+   THEN
+      CASE WHEN T2."DocTotal" = T2."PaidToDate"
+         THEN 0
+         ELSE ((T3."LineTotal"/(T2."DocTotal"))*(T2."DocTotal" - T2."PaidToDate") /T0."SysRate")
+      END
+   ELSE
+      CASE WHEN T2."DocTotalFC" = T2."PaidFC"
+         THEN 0
+         ELSE (T3."TotalSumSy"/(T2."DocTotalFC"))*(T2."DocTotalFC" - T2."PaidFC")
+      END
+END
+)-
+CASE WHEN T2."DpmPrcnt" = 100
+   THEN 0
+ELSE
+   CASE WHEN T2."DocCur" = 'COL'
+      THEN (T3."LineTotal"+T3."VatSum")/(Select SUM(X1."LineTotal"+X1."VatSum")
+                         From ODPO X0 INNER JOIN DPO1 X1 ON X0."DocEntry" = X1."DocEntry"
+                         Where X0."DocNum" = T2."DocNum" AND X0."DocEntry" = T2."DocEntry"
+                         Group By X0."DocNum")*T1."SumApplied" /T0."SysRate"
+      ELSE (T3."TotalSumSy"+T3."VatSumSy")/(Select SUM(X1."TotalSumSy"+X1."VatSumSy")
+                          From ODPO X0 INNER JOIN DPO1 X1 ON X0."DocEntry" = X1."DocEntry"
+                          Where X0."DocNum" = T2."DocNum" AND X0."DocEntry" = T2."DocEntry"
+                          Group By X0."DocNum")*T1."AppliedSys"
+   END
+END "Otras Diferencias$",
+--Neto
+CASE WHEN T2."DocCur" = 'COL'
+   THEN (T3."LineTotal"+T3."VatSum")/(Select DISTINCT SUM(X1."LineTotal"+X1."VatSum")
+                         From ODPO X0 INNER JOIN DPO1 X1 ON X0."DocEntry" = X1."DocEntry"
+                         Where X0."DocNum" = T2."DocNum" AND X0."DocEntry" = T2."DocEntry"
+                         Group By X0."DocNum")*T1."SumApplied" /T0."SysRate"
+   ELSE (T3."TotalSumSy"+T3."VatSumSy")/(Select SUM(X1."TotalSumSy"+X1."VatSumSy")
+                          From ODPO X0 INNER JOIN DPO1 X1 ON X0."DocEntry" = X1."DocEntry"
+                          Where X0."DocNum" = T2."DocNum" AND X0."DocEntry" = T2."DocEntry"
+                          Group By X0."DocNum")*T1."AppliedSys"
+END*-1
+"Neto $"
+FROM OVPM T0
+LEFT JOIN VPM2 T1 ON T0."DocEntry" = T1."DocNum"
+LEFT JOIN ODPO T2 ON T0."DocNum" = T2."ReceiptNum" AND T1."baseAbs" = T2."DocEntry"
+LEFT JOIN DPO1 T3 ON T2."DocEntry" = T3."DocEntry"
+LEFT JOIN OOCR T4 ON T3."OcrCode" = T4."OcrCode"
+LEFT JOIN OACT T5 ON T0."TrsfrAcct" = T5."AcctCode"
+LEFT  JOIN POR1 T6 ON T3."DocEntry" = T6."TrgetEntry"
+LEFT JOIN OPOR T7 ON T6."DocEntry" = T7."DocEntry"
+WHERE T0."TrsfrAcct" Like '1-1-01-02%' AND T0."DocDate" >= ? AND T0."DocDate" <= ? AND T0."Canceled" = 'N'
+
+UNION ALL
+
+--Pago a cuenta
+SELECT DISTINCT T0."DocNum" AS "NumPago",T0."DocDate" AS "Fecha de Pago", T2."DocNum",
+T0."U_CodCC" "Centro Costo", T0."U_NomCC" "Nombre CC",
+T0."CardCode",T0."CardName" AS "Proveedor", T0."TrsfrAcct", T5."AcctName", T2."U_Ref4Cast",T7."NumAtCard",T3."LineNum", T3."Dscription",
+T2."JrnlMemo", T0."JrnlMemo",
+CASE WHEN T2."DocCur" = 'COL' THEN (T3."LineTotal"/T0."SysRate")*-1 ELSE T0."TrsfrSumSy"*-1 END "Monto Dólares",
+0 "Anticipo $ Pro.",
+0 "Retención $ Pro.",
+0 "Impuesto $ Pro.",
+0 "Saldo $ Pro.",
+0 "Otras Diferencias$",
+CASE WHEN T2."DocCur" = 'COL' THEN (T3."LineTotal"/T0."SysRate")*-1 ELSE T0."TrsfrSumSy"*-1 END "Neto $"
+FROM OVPM T0
+LEFT JOIN VPM2 T1 ON T0."DocEntry" = T1."DocNum"
+LEFT JOIN OPCH T2 ON T1."DocEntry" = T2."DocEntry"
+LEFT JOIN PCH1 T3 ON T2."DocEntry" = T3."DocEntry"
+LEFT JOIN OOCR T4 ON T3."OcrCode" = T4."OcrCode"
+LEFT JOIN OACT T5 ON T0."TrsfrAcct" = T5."AcctCode"
+LEFT  JOIN POR1 T6 ON T3."DocEntry" = T6."TrgetEntry"
+LEFT JOIN OPOR T7 ON T6."DocEntry" = T7."DocEntry"
+WHERE T0."TrsfrAcct" Like '1-1-01-02%' AND T0."DocDate" >= ? AND T0."DocDate" <= ? AND T0."Canceled" = 'N'
+AND (T1."InvType" <> 204 OR COALESCE(T1."InvType" , '0') = '0' OR T1."InvType" = '')
+AND T0."PayNoDoc"  = 'Y'
+
+UNION ALL
+
+--Pago a cuenta Traslados entre Bancos
+SELECT DISTINCT T0."DocNum" AS "NumPago",T0."DocDate" AS "Fecha de Pago", T2."DocNum",
+T0."U_CodCC" "Centro Costo", T0."U_NomCC" "Nombre CC",
+T0."CardCode",T0."CardName" AS "Proveedor", T0."CardCode", T5."AcctName", T2."U_Ref4Cast",T7."NumAtCard",T3."LineNum", T3."Dscription",
+T2."JrnlMemo", T0."JrnlMemo",
+CASE WHEN T2."DocCur" = 'COL' THEN (T3."LineTotal"/T0."SysRate")*-1 ELSE T0."TrsfrSumSy" END "Monto Dólares",
+0 "Anticipo $ Pro.",
+0 "Retención $ Pro.",
+0 "Impuesto $ Pro.",
+0 "Saldo $ Pro.",
+0 "Otras Diferencias$",
+CASE WHEN T2."DocCur" = 'COL' THEN (T3."LineTotal"/T0."SysRate")*-1 ELSE T0."TrsfrSumSy" END "Neto $"
+FROM OVPM T0
+LEFT JOIN VPM2 T1 ON T0."DocEntry" = T1."DocNum"
+LEFT JOIN OPCH T2 ON T1."DocEntry" = T2."DocEntry"
+LEFT JOIN PCH1 T3 ON T2."DocEntry" = T3."DocEntry"
+LEFT JOIN OOCR T4 ON T3."OcrCode" = T4."OcrCode"
+LEFT JOIN OACT T5 ON T0."CardCode" = T5."AcctCode"
+LEFT  JOIN POR1 T6 ON T3."DocEntry" = T6."TrgetEntry"
+LEFT JOIN OPOR T7 ON T6."DocEntry" = T7."DocEntry"
+WHERE T0."CardCode" Like '1-1-01-02%' AND T0."DocDate" >= ? AND T0."DocDate" <= ? AND T0."Canceled" = 'N'
+AND (T1."InvType" <> 204 OR COALESCE(T1."InvType" , '0') = '0' OR T1."InvType" = '')
+AND T0."PayNoDoc"  = 'Y' AND (T0."JrnlMemo" LIKE 'TRASLADO%' OR T0."Address" LIKE 'TRASLADO%')
+
+UNION ALL
+
+--Pago por diferencial cambiario.
+SELECT DISTINCT 0 AS "NumPago",T0."RefDate" AS "Fecha de Pago", T0."Number",
+' ' "Centro Costo", ' ' "Nombre CC",
+' ' AS "Código de deudor/acreedor", ' ' AS "Proveedor", T1."Account", T2."AcctName", ' ' AS "Ref4Cast", ' ' AS "Número de referencia de deudor/acreedor",
+0 AS "Número de línea", ' ' AS "Descripción artículo/serv.",
+' ' AS "Comentarios", ' ' AS "Comentarios",
+CASE WHEN T1."SYSCred" <> 0 THEN T1."SYSCred" * -1 ELSE T1."SYSDeb" END "Monto Dólares",
+0 "Anticipo $ Pro.",
+0 "Retención $ Pro.",
+0 "Impuesto $ Pro.",
+0 "Saldo $ Pro.",
+0 "Otras Diferencias$",
+CASE WHEN T1."SYSCred" <> 0 THEN T1."SYSCred" * -1 ELSE T1."SYSDeb" END "Neto $"
+FROM OJDT T0 INNER JOIN JDT1 T1 ON T0."TransId" = T1."TransId" INNER JOIN OACT T2 ON T1."Account" = T2."AcctCode"
+WHERE T0."RefDate" >=? AND T0."RefDate" <=?
+AND T0."TransCode" = 'DIF'
+AND T1."Account" Like '1-1-01-02%%'
+
+UNION ALL
+
+--Trae las Solicitudes de Pago CLIENTES
+SELECT DISTINCT T0."DocNum" AS "NumPago",T0."DocDate" AS "Fecha de Pago", T2."DocNum",
+T3."OcrCode" "Centro Costo", T4."OcrName" "Nombre CC",
+T0."CardCode",T0."CardName" AS "Proveedor", T0."TrsfrAcct", T5."AcctName", T2."U_Ref4Cast",T7."NumAtCard",T3."LineNum", T3."Dscription",
+T2."JrnlMemo", T0."JrnlMemo",
+CASE WHEN T2."DocCur" = 'COL' THEN (T3."LineTotal"/T0."SysRate")*-1 ELSE T3."TotalSumSy"*-1 END "Monto Dólares",
+CASE WHEN T2."DocCur" = 'COL'
+   THEN
+      CASE WHEN T2."BaseAmnt" = 0 OR (T2."BaseAmnt"+T2."DpmAmnt"+T2."NnSbAmnt") = 0
+         THEN 0
+         ELSE ((T3."LineTotal"/(T2."BaseAmnt"+T2."DpmAmnt"+T2."NnSbAmnt"))*T2."DpmAmnt" /T0."SysRate")*-1
+      END
+   ELSE
+      CASE WHEN T2."BaseAmntFC" = 0 OR (T2."BaseAmntFC"+T2."DpmAmntSC"+T2."NnSbAmntSC") = 0
+         THEN 0
+         ELSE (T3."TotalSumSy"/(T2."BaseAmntFC"+T2."DpmAmntSC"+T2."NnSbAmntSC"))*T2."DpmAmntSC" *-1
+      END
+END "Anticipo $ Pro.",
+CASE WHEN T2."DocCur" = 'COL'
+   THEN
+      CASE WHEN T2."WTSumSC" = 0 OR (T2."BaseAmnt"+T2."DpmAmnt"+T2."NnSbAmnt") = 0
+         THEN 0
+         ELSE ((T3."LineTotal"/(T2."BaseAmnt"+T2."DpmAmnt"+T2."NnSbAmnt"))*T2."WTSumSC" /T0."SysRate")*-1
+      END
+   ELSE
+      CASE WHEN T2."WTSumSC" = 0  OR (T2."BaseAmntFC"+T2."DpmAmntSC"+T2."NnSbAmntSC") = 0
+         THEN 0
+         ELSE (T3."TotalSumSy"/(T2."BaseAmntFC"+T2."DpmAmntSC"+T2."NnSbAmntSC"))*T2."WTSumSC"*-1
+      END
+END "Retención $ Pro.",
+CASE WHEN T2."DocCur" = 'COL'
+   THEN
+      CASE WHEN T2."VatSumFC" = 0 OR (T2."BaseAmnt"+T2."DpmAmnt"+T2."NnSbAmnt") = 0
+         THEN 0
+         ELSE ((T3."LineTotal"/(T2."BaseAmnt"+T2."DpmAmnt"+T2."NnSbAmnt"))*T2."VatSumFC" /T0."SysRate")*-1
+      END
+   ELSE
+      CASE WHEN T2."VatSumFC" = 0  OR (T2."BaseAmntFC"+T2."DpmAmntSC"+T2."NnSbAmntSC") = 0
+         THEN 0
+         ELSE (T3."TotalSumSy"/(T2."BaseAmntFC"+T2."DpmAmntSC"+T2."NnSbAmntSC"))*T2."VatSumFC"*-1
+      END
+END "Impuesto $ Pro.",
+CASE WHEN T2."DocCur" = 'COL'
+   THEN
+      CASE WHEN T2."DocTotal" = T2."PaidToDate" OR (T2."BaseAmnt"+T2."DpmAmnt"+T2."NnSbAmnt") = 0
+         THEN 0
+         ELSE ((T3."LineTotal"/(T2."BaseAmnt"+T2."DpmAmnt"+T2."NnSbAmnt"))*(T2."DocTotal" - T2."PaidToDate") /T0."SysRate")*-1
+      END
+   ELSE
+      CASE WHEN T2."DocTotalFC" = T2."PaidFC" OR (T2."BaseAmntFC"+T2."DpmAmntSC"+T2."NnSbAmntSC") = 0
+         THEN 0
+         ELSE (T3."TotalSumSy"/(T2."BaseAmntFC"+T2."DpmAmntSC"+T2."NnSbAmntSC"))*(T2."DocTotalFC" - T2."PaidFC")*-1
+      END
+END "Saldo $ Pro.",
+0 "Otras Diferencias$",
+(
+CASE WHEN T2."DocCur" = 'COL' THEN T3."LineTotal"/T0."SysRate" ELSE T3."TotalSumSy" END-
+
+CASE WHEN T2."DocCur" = 'COL'
+   THEN
+      CASE WHEN T2."BaseAmnt" = 0 OR (T2."BaseAmnt"+T2."DpmAmnt"+T2."NnSbAmnt") = 0
+         THEN 0
+         ELSE (T3."LineTotal"/(T2."BaseAmnt"+T2."DpmAmnt"+T2."NnSbAmnt"))*T2."DpmAmnt" /T0."SysRate"
+      END
+   ELSE
+      CASE WHEN T2."BaseAmntFC" = 0 OR (T2."BaseAmntFC"+T2."DpmAmntSC"+T2."NnSbAmntSC") = 0
+         THEN 0
+         ELSE (T3."TotalSumSy"/(T2."BaseAmntFC"+T2."DpmAmntSC"+T2."NnSbAmntSC"))*T2."DpmAmntSC"
+      END
+END-
+CASE WHEN T2."DocCur" = 'COL'
+   THEN
+      CASE WHEN T2."WTSumSC" = 0 OR (T2."BaseAmnt"+T2."DpmAmnt"+T2."NnSbAmnt") = 0
+         THEN 0
+         ELSE (T3."LineTotal"/(T2."BaseAmnt"+T2."DpmAmnt"+T2."NnSbAmnt"))*T2."WTSumSC" /T0."SysRate"
+      END
+   ELSE
+      CASE WHEN T2."WTSumSC" = 0  OR (T2."BaseAmntFC"+T2."DpmAmntSC"+T2."NnSbAmntSC") = 0
+         THEN 0
+         ELSE (T3."TotalSumSy"/(T2."BaseAmntFC"+T2."DpmAmntSC"+T2."NnSbAmntSC"))*T2."WTSumSC"
+      END
+END+
+CASE WHEN T2."DocCur" = 'COL'
+   THEN
+      CASE WHEN T2."VatSumFC" = 0 OR (T2."BaseAmnt"+T2."DpmAmnt"+T2."NnSbAmnt") = 0
+         THEN 0
+         ELSE (T3."LineTotal"/(T2."BaseAmnt"+T2."DpmAmnt"+T2."NnSbAmnt"))*T2."VatSumFC" /T0."SysRate"
+      END
+   ELSE
+      CASE WHEN T2."VatSumFC" = 0  OR (T2."BaseAmntFC"+T2."DpmAmntSC"+T2."NnSbAmntSC") = 0
+         THEN 0
+         ELSE (T3."TotalSumSy"/(T2."BaseAmntFC"+T2."DpmAmntSC"+T2."NnSbAmntSC"))*T2."VatSumFC"
+      END
+END-
+CASE WHEN T2."DocCur" = 'COL'
+   THEN
+      CASE WHEN T2."DocTotal" = T2."PaidToDate" OR (T2."BaseAmnt"+T2."DpmAmnt"+T2."NnSbAmnt") = 0
+         THEN 0
+         ELSE (T3."LineTotal"/(T2."BaseAmnt"+T2."DpmAmnt"+T2."NnSbAmnt"))*(T2."DocTotal" - T2."PaidToDate") /T0."SysRate"
+      END
+   ELSE
+      CASE WHEN T2."DocTotalFC" = T2."PaidFC" OR (T2."BaseAmntFC"+T2."DpmAmntSC"+T2."NnSbAmntSC") = 0
+         THEN 0
+         ELSE (T3."TotalSumSy"/(T2."BaseAmntFC"+T2."DpmAmntSC"+T2."NnSbAmntSC"))*(T2."DocTotalFC" - T2."PaidFC")
+      END
+END
+)*-1
+ "Neto $"
+FROM ORCT T0
+INNER JOIN RCT2 T1 ON T0."DocEntry" = T1."DocNum"
+INNER JOIN ODPI T2 ON T0."DocNum" = T2."ReceiptNum"
+INNER JOIN DPO1 T3 ON T2."DocEntry" = T3."DocEntry"
+INNER JOIN OOCR T4 ON T3."OcrCode" = T4."OcrCode"
+INNER JOIN OACT T5 ON T0."TrsfrAcct" = T5."AcctCode"
+LEFT  JOIN POR1 T6 ON T3."DocEntry" = T6."TrgetEntry"
+LEFT JOIN OPOR T7 ON T6."DocEntry" = T7."DocEntry"
+WHERE T0."TrsfrAcct" Like '1-1-01-02%' AND T0."DocDate" >= ? AND T0."DocDate" <= ? AND T0."Canceled" = 'N'
+
+UNION ALL
+
+--Pagos efectuados Facturas
+SELECT DISTINCT T0."DocNum" AS "NumPago",T0."DocDate" AS "Fecha de Pago", T2."DocNum",
+T3."OcrCode" "Centro Costo", T4."OcrName" "Nombre CC",
+T0."CardCode",T0."CardName" AS "Proveedor", T0."TrsfrAcct", T5."AcctName", T2."U_Ref4Cast",T7."NumAtCard",T3."LineNum", T3."Dscription",
+T2."JrnlMemo", T0."JrnlMemo",
+CASE WHEN T2."DocCur" = 'COL' THEN T3."LineTotal"/T0."SysRate"*-1 ELSE T3."TotalSumSy"*-1 END "Monto DólaresFA",
+CASE WHEN T2."DocCur" = 'COL'
+   THEN ((T3."LineTotal"/(Select SUM(X1."LineTotal")
+                         From OPCH X0 INNER JOIN PCH1 X1 ON X0."DocEntry" = X1."DocEntry"
+                         Where X0."DocNum" = T2."DocNum" AND X0."DocEntry" = T2."DocEntry"
+                         Group By X0."DocNum"))*T2."DpmAmnt" /T0."SysRate")*-1
+   ELSE (T3."TotalSumSy"/(Select SUM(X1."TotalSumSy")
+                          From OPCH X0 INNER JOIN PCH1 X1 ON X0."DocEntry" = X1."DocEntry"
+                          Where X0."DocNum" = T2."DocNum" AND X0."DocEntry" = T2."DocEntry"
+                          Group By X0."DocNum"))*T2."DpmAmntSC" *-1
+END "Anticipo $ Pro.",
+CASE WHEN T2."DocCur" = 'COL'
+   THEN ((T3."LineTotal"/(Select SUM(X1."LineTotal")
+                         From OPCH X0 INNER JOIN PCH1 X1 ON X0."DocEntry" = X1."DocEntry"
+                         Where X0."DocNum" = T2."DocNum" AND X0."DocEntry" = T2."DocEntry"
+                         Group By X0."DocNum"))*T2."WTSum" /T0."SysRate")*-1
+   ELSE (T3."TotalSumSy"/(Select SUM(X1."TotalSumSy")
+                          From OPCH X0 INNER JOIN PCH1 X1 ON X0."DocEntry" = X1."DocEntry"
+                          Where X0."DocNum" = T2."DocNum" AND X0."DocEntry" = T2."DocEntry"
+                          Group By X0."DocNum"))*T2."WTSumSC" *-1
+END "Retención $ Pro.",
+CASE WHEN T2."DocCur" = 'COL'
+   THEN
+      CASE WHEN T2."VatSum" = 0
+         THEN 0
+         ELSE ((T3."LineTotal"/(T2."DocTotal"-T2."VatSum"))*T2."VatSum" /T0."SysRate")*-1
+      END
+   ELSE
+      CASE WHEN T2."VatSumFC" = 0
+         THEN 0
+         ELSE (T3."TotalSumSy"/(T2."DocTotalSy"-T2."VatSumFC"))*T2."VatSumFC" *-1
+      END
+END "Impuesto $ Pro.",
+CASE WHEN T2."DocCur" = 'COL'
+   THEN
+      CASE WHEN T2."DocTotal" = T2."PaidToDate"
+         THEN 0
+         ELSE ((T3."LineTotal"/(T2."DocTotal"))*(T2."DocTotal" - T2."PaidToDate") /T0."SysRate")*-1
+      END
+   ELSE
+      CASE WHEN T2."DocTotalFC" = T2."PaidFC"
+         THEN 0
+         ELSE (T3."TotalSumSy"/(T2."DocTotalFC"))*(T2."DocTotalFC" - T2."PaidFC")*-1
+      END
+END "Saldo $ Pro.",
+(
+CASE WHEN T2."DocCur" = 'COL' THEN T3."LineTotal"/T0."SysRate" ELSE T3."TotalSumSy" END-
+CASE WHEN T2."DocCur" = 'COL'
+   THEN ((T3."LineTotal"/(Select SUM(X1."LineTotal")
+                         From OPCH X0 INNER JOIN PCH1 X1 ON X0."DocEntry" = X1."DocEntry"
+                         Where X0."DocNum" = T2."DocNum" AND X0."DocEntry" = T2."DocEntry"
+                         Group By X0."DocNum"))*T2."DpmAmnt" /T0."SysRate")
+   ELSE (T3."TotalSumSy"/(Select SUM(X1."TotalSumSy")
+                          From OPCH X0 INNER JOIN PCH1 X1 ON X0."DocEntry" = X1."DocEntry"
+                          Where X0."DocNum" = T2."DocNum" AND X0."DocEntry" = T2."DocEntry"
+                          Group By X0."DocNum"))*T2."DpmAmntSC"
+END-
+CASE WHEN T2."DocCur" = 'COL'
+   THEN ((T3."LineTotal"/(Select SUM(X1."LineTotal")
+                         From OPCH X0 INNER JOIN PCH1 X1 ON X0."DocEntry" = X1."DocEntry"
+                         Where X0."DocNum" = T2."DocNum" AND X0."DocEntry" = T2."DocEntry"
+                         Group By X0."DocNum"))*T2."WTSum" /T0."SysRate")
+   ELSE (T3."TotalSumSy"/(Select SUM(X1."TotalSumSy")
+                          From OPCH X0 INNER JOIN PCH1 X1 ON X0."DocEntry" = X1."DocEntry"
+                          Where X0."DocNum" = T2."DocNum" AND X0."DocEntry" = T2."DocEntry"
+                          Group By X0."DocNum"))*T2."WTSumSC"
+END+
+CASE WHEN T2."DocCur" = 'COL'
+   THEN
+      CASE WHEN T2."VatSum" = 0
+         THEN 0
+         ELSE ((T3."LineTotal"/(T2."DocTotal"-T2."VatSum"))*T2."VatSum" /T0."SysRate")
+      END
+   ELSE
+      CASE WHEN T2."VatSumFC" = 0
+         THEN 0
+         ELSE (T3."TotalSumSy"/(T2."DocTotalSy"-T2."VatSumFC"))*T2."VatSumFC"
+      END
+END-
+CASE WHEN T2."DocCur" = 'COL'
+   THEN
+      CASE WHEN T2."DocTotal" = T2."PaidToDate"
+         THEN 0
+         ELSE ((T3."LineTotal"/(T2."DocTotal"))*(T2."DocTotal" - T2."PaidToDate") /T0."SysRate")
+      END
+   ELSE
+      CASE WHEN T2."DocTotalFC" = T2."PaidFC"
+         THEN 0
+         ELSE (T3."TotalSumSy"/(T2."DocTotalFC"))*(T2."DocTotalFC" - T2."PaidFC")
+      END
+END
+)-
+CASE WHEN T2."DocCur" = 'COL'
+   THEN (T3."LineTotal"+T3."VatSum")/(Select SUM(X1."LineTotal"+X1."VatSum")
+                         From OPCH X0 INNER JOIN PCH1 X1 ON X0."DocEntry" = X1."DocEntry"
+                         Where X0."DocNum" = T2."DocNum" AND X0."DocEntry" = T2."DocEntry"
+                         Group By X0."DocNum")*T1."SumApplied" /T0."SysRate"
+   ELSE (T3."TotalSumSy"+T3."VatSumSy")/(Select SUM(X1."TotalSumSy"+X1."VatSumSy")
+                          From OPCH X0 INNER JOIN PCH1 X1 ON X0."DocEntry" = X1."DocEntry"
+                          Where X0."DocNum" = T2."DocNum" AND X0."DocEntry" = T2."DocEntry"
+                          Group By X0."DocNum")*T1."AppliedSys"
+END "Otras Diferencias$",
+--Neto
+CASE WHEN T2."DocCur" = 'COL'
+   THEN (T3."LineTotal"+T3."VatSum")/(Select SUM(X1."LineTotal"+X1."VatSum")
+                         From OPCH X0 INNER JOIN PCH1 X1 ON X0."DocEntry" = X1."DocEntry"
+                         Where X0."DocNum" = T2."DocNum" AND X0."DocEntry" = T2."DocEntry"
+                         Group By X0."DocNum")*T1."SumApplied" /T0."SysRate"
+   ELSE (T3."TotalSumSy"+T3."VatSumSy")/(Select SUM(X1."TotalSumSy"+X1."VatSumSy")
+                          From OPCH X0 INNER JOIN PCH1 X1 ON X0."DocEntry" = X1."DocEntry"
+                          Where X0."DocNum" = T2."DocNum" AND X0."DocEntry" = T2."DocEntry"
+                          Group By X0."DocNum")*T1."AppliedSys"
+END*-1
+"Neto $"
+FROM OVPM T0
+LEFT JOIN VPM2 T1 ON T0."DocEntry" = T1."DocNum"
+LEFT JOIN OPCH T2 ON T1."DocEntry" = T2."DocEntry"
+LEFT JOIN PCH1 T3 ON T2."DocEntry" = T3."DocEntry"
+LEFT JOIN OOCR T4 ON T3."OcrCode" = T4."OcrCode"
+LEFT JOIN OACT T5 ON T0."TrsfrAcct" = T5."AcctCode"
+LEFT  JOIN POR1 T6 ON T3."DocEntry" = T6."TrgetEntry"
+LEFT JOIN OPOR T7 ON T6."DocEntry" = T7."DocEntry"
+WHERE T0."TrsfrAcct" Like '1-1-01-02%' AND T0."DocDate" >= ? AND T0."DocDate" <= ? AND T0."Canceled" = 'N'
+AND (T1."InvType" <> 204 OR COALESCE(T1."InvType" , '0') = '0' OR T1."InvType" = '')
+AND T0."PayNoDoc"  <> 'Y' AND T1."InvType" <> 19 AND T1."InvType" <> 46
+
+UNION ALL
+
+--Pagos efectuados NC
+SELECT DISTINCT T0."DocNum" AS "NumPago",T0."DocDate" AS "Fecha de Pago", T2."DocNum",
+T3."OcrCode" "Centro Costo", T4."OcrName" "Nombre CC",
+T0."CardCode",T0."CardName" AS "Proveedor", T0."TrsfrAcct", T5."AcctName", T2."U_Ref4Cast",T7."NumAtCard",T3."LineNum", T3."Dscription",
+T2."JrnlMemo", T0."JrnlMemo",
+CASE WHEN T2."DocCur" = 'COL' THEN T3."LineTotal"/T0."SysRate"*-1 ELSE T3."TotalSumSy" END "Monto DólaresFA",
+CASE WHEN T2."DocCur" = 'COL'
+   THEN ((T3."LineTotal"/(Select SUM(X1."LineTotal")
+                         From OPCH X0 INNER JOIN PCH1 X1 ON X0."DocEntry" = X1."DocEntry"
+                         Where X0."DocNum" = T2."DocNum" AND X0."DocEntry" = T2."DocEntry"
+                         Group By X0."DocNum"))*T2."DpmAmnt" /T0."SysRate")
+   ELSE (T3."TotalSumSy"/(Select SUM(X1."TotalSumSy")
+                          From OPCH X0 INNER JOIN PCH1 X1 ON X0."DocEntry" = X1."DocEntry"
+                          Where X0."DocNum" = T2."DocNum" AND X0."DocEntry" = T2."DocEntry"
+                          Group By X0."DocNum"))*T2."DpmAmntSC"
+END "Anticipo $ Pro.",
+CASE WHEN T2."DocCur" = 'COL'
+   THEN ((T3."LineTotal"/(Select SUM(X1."LineTotal")
+                         From OPCH X0 INNER JOIN PCH1 X1 ON X0."DocEntry" = X1."DocEntry"
+                         Where X0."DocNum" = T2."DocNum" AND X0."DocEntry" = T2."DocEntry"
+                         Group By X0."DocNum"))*T2."WTSum" /T0."SysRate")
+   ELSE (T3."TotalSumSy"/(Select SUM(X1."TotalSumSy")
+                          From OPCH X0 INNER JOIN PCH1 X1 ON X0."DocEntry" = X1."DocEntry"
+                          Where X0."DocNum" = T2."DocNum" AND X0."DocEntry" = T2."DocEntry"
+                          Group By X0."DocNum"))*T2."WTSumSC"
+END "Retención $ Pro.",
+CASE WHEN T2."DocCur" = 'COL'
+   THEN
+      CASE WHEN T2."VatSum" = 0
+         THEN 0
+         ELSE ((T3."LineTotal"/(T2."DocTotal"-T2."VatSum"))*T2."VatSum" /T0."SysRate")
+      END
+   ELSE
+      CASE WHEN T2."VatSumFC" = 0
+         THEN 0
+         ELSE (T3."TotalSumSy"/(T2."DocTotalSy"-T2."VatSumFC"))*T2."VatSumFC"
+      END
+END "Impuesto $ Pro.",
+CASE WHEN T2."DocCur" = 'COL'
+   THEN
+      CASE WHEN T2."DocTotal" = T2."PaidToDate"
+         THEN 0
+         ELSE ((T3."LineTotal"/(T2."DocTotal"))*(T2."DocTotal" - T2."PaidToDate") /T0."SysRate")
+      END
+   ELSE
+      CASE WHEN T2."DocTotalFC" = T2."PaidFC"
+         THEN 0
+         ELSE (T3."TotalSumSy"/(T2."DocTotalFC"))*(T2."DocTotalFC" - T2."PaidFC")
+      END
+END "Saldo $ Pro.",
+(
+CASE WHEN T2."DocCur" = 'COL' THEN T3."LineTotal"/T0."SysRate" ELSE T3."TotalSumSy" END-
+CASE WHEN T2."DocCur" = 'COL'
+   THEN ((T3."LineTotal"/(Select SUM(X1."LineTotal")
+                         From OPCH X0 INNER JOIN PCH1 X1 ON X0."DocEntry" = X1."DocEntry"
+                         Where X0."DocNum" = T2."DocNum" AND X0."DocEntry" = T2."DocEntry"
+                         Group By X0."DocNum"))*T2."DpmAmnt" /T0."SysRate")
+   ELSE (T3."TotalSumSy"/(Select SUM(X1."TotalSumSy")
+                          From OPCH X0 INNER JOIN PCH1 X1 ON X0."DocEntry" = X1."DocEntry"
+                          Where X0."DocNum" = T2."DocNum" AND X0."DocEntry" = T2."DocEntry"
+                          Group By X0."DocNum"))*T2."DpmAmntSC"
+END-
+CASE WHEN T2."DocCur" = 'COL'
+   THEN ((T3."LineTotal"/(Select SUM(X1."LineTotal")
+                         From OPCH X0 INNER JOIN PCH1 X1 ON X0."DocEntry" = X1."DocEntry"
+                         Where X0."DocNum" = T2."DocNum" AND X0."DocEntry" = T2."DocEntry"
+                         Group By X0."DocNum"))*T2."WTSum" /T0."SysRate")
+   ELSE (T3."TotalSumSy"/(Select SUM(X1."TotalSumSy")
+                          From OPCH X0 INNER JOIN PCH1 X1 ON X0."DocEntry" = X1."DocEntry"
+                          Where X0."DocNum" = T2."DocNum" AND X0."DocEntry" = T2."DocEntry"
+                          Group By X0."DocNum"))*T2."WTSumSC"
+END+
+CASE WHEN T2."DocCur" = 'COL'
+   THEN
+      CASE WHEN T2."VatSum" = 0
+         THEN 0
+         ELSE ((T3."LineTotal"/(T2."DocTotal"-T2."VatSum"))*T2."VatSum" /T0."SysRate")
+      END
+   ELSE
+      CASE WHEN T2."VatSumFC" = 0
+         THEN 0
+         ELSE (T3."TotalSumSy"/(T2."DocTotalSy"-T2."VatSumFC"))*T2."VatSumFC"
+      END
+END-
+CASE WHEN T2."DocCur" = 'COL'
+   THEN
+      CASE WHEN T2."DocTotal" = T2."PaidToDate"
+         THEN 0
+         ELSE ((T3."LineTotal"/(T2."DocTotal"))*(T2."DocTotal" - T2."PaidToDate") /T0."SysRate")
+      END
+   ELSE
+      CASE WHEN T2."DocTotalFC" = T2."PaidFC"
+         THEN 0
+         ELSE (T3."TotalSumSy"/(T2."DocTotalFC"))*(T2."DocTotalFC" - T2."PaidFC")
+      END
+END
+)-
+CASE WHEN T2."DocCur" = 'COL'
+   THEN (T3."LineTotal"+T3."VatSum")/(Select SUM(X1."LineTotal"+X1."VatSum")
+                         From ORPC X0 INNER JOIN RPC1 X1 ON X0."DocEntry" = X1."DocEntry"
+                         Where X0."DocNum" = T2."DocNum" AND X0."DocEntry" = T2."DocEntry"
+                         Group By X0."DocNum")*T1."SumApplied" /T0."SysRate"
+   ELSE (T3."TotalSumSy"+T3."VatSumSy")/(Select SUM(X1."TotalSumSy"+X1."VatSumSy")
+                          From ORPC X0 INNER JOIN RPC1 X1 ON X0."DocEntry" = X1."DocEntry"
+                          Where X0."DocNum" = T2."DocNum" AND X0."DocEntry" = T2."DocEntry"
+                          Group By X0."DocNum")*T1."AppliedSys"
+END "Otras Diferencias$",
+--Neto
+CASE WHEN T2."DocCur" = 'COL'
+   THEN (T3."LineTotal"+T3."VatSum")/(Select SUM(X1."LineTotal"+X1."VatSum")
+                         From ORPC X0 INNER JOIN RPC1 X1 ON X0."DocEntry" = X1."DocEntry"
+                         Where X0."DocNum" = T2."DocNum" AND X0."DocEntry" = T2."DocEntry"
+                         Group By X0."DocNum")*T1."SumApplied" /T0."SysRate"
+   ELSE (T3."TotalSumSy"+T3."VatSumSy")/(Select SUM(X1."TotalSumSy"+X1."VatSumSy")
+                          From ORPC X0 INNER JOIN RPC1 X1 ON X0."DocEntry" = X1."DocEntry"
+                          Where X0."DocNum" = T2."DocNum" AND X0."DocEntry" = T2."DocEntry"
+                          Group By X0."DocNum")*T1."AppliedSys"
+END
+"Neto $"
+FROM OVPM T0
+LEFT JOIN VPM2 T1 ON T0."DocEntry" = T1."DocNum"
+LEFT JOIN ORPC T2 ON T1."DocEntry" = T2."DocEntry"
+LEFT JOIN RPC1 T3 ON T2."DocEntry" = T3."DocEntry"
+LEFT JOIN OOCR T4 ON T3."OcrCode" = T4."OcrCode"
+LEFT JOIN OACT T5 ON T0."TrsfrAcct" = T5."AcctCode"
+LEFT  JOIN POR1 T6 ON T3."DocEntry" = T6."TrgetEntry"
+LEFT JOIN OPOR T7 ON T6."DocEntry" = T7."DocEntry"
+WHERE T0."TrsfrAcct" Like '1-1-01-02%' AND T0."DocDate" >= ? AND T0."DocDate" <= ? AND T0."Canceled" = 'N'
+AND (T1."InvType" <> 204 OR COALESCE(T1."InvType" , '0') = '0' OR T1."InvType" = '')
+AND T0."PayNoDoc"  <> 'Y' AND T1."InvType" = 19
+
+UNION ALL
+
+--Pago efectuado con asiento a cuenta
+SELECT DISTINCT T0."DocNum" AS "NumPago",T0."DocDate" AS "Fecha de Pago", T3."DocNum",
+T3."U_CodCC" "Centro Costo", T4."OcrName" "Nombre CC",
+T0."CardCode" AS "Código de deudor/acreedor",T0."CardName" AS "Proveedor", T0."TrsfrAcct", T5."AcctName", ' ' AS "Ref4Cast",
+T7."NumAtCard" AS "Número de referencia de deudor/acreedor",
+0 AS "Número de línea", ' ' AS "Descripción artículo/serv.",
+' ' AS "Comentarios", T0."JrnlMemo" AS "Comentarios",
+T3."DocTotalSy" "Monto Dólares",
+0 "Anticipo $ Pro.",
+0 "Retención $ Pro.",
+0 "Impuesto $ Pro.",
+0 "Saldo $ Pro.",
+0 "Otras Diferencias$",
+T3."DocTotalSy"  "Neto $"
+FROM OVPM T0
+LEFT JOIN VPM2 T1 ON T0."DocEntry" = T1."DocNum"
+INNER JOIN OJDT T2 ON T1."DocEntry" = T2."TransId"
+INNER JOIN OVPM T3 ON T2."BaseRef" = T3."DocNum"
+LEFT JOIN OOCR T4 ON T3."U_CodCC" = T4."OcrCode"
+LEFT JOIN OACT T5 ON T0."TrsfrAcct" = T5."AcctCode"
+LEFT  JOIN POR1 T6 ON T3."DocEntry" = T6."TrgetEntry"
+LEFT JOIN OPOR T7 ON T6."DocEntry" = T7."DocEntry"
+WHERE T0."TrsfrAcct" Like '1-1-01-02%' AND T0."DocDate" >= ? AND T0."DocDate" <= ? AND T0."Canceled" = 'N'
+AND (T1."InvType" <> 204 OR COALESCE(T1."InvType" , '0') = '0' OR T1."InvType" = '') AND T1."InvType" = 46`,
+      params: Array.from({ length: 11 }, () => [f.dateFrom, f.dateTo]).flat(),
     }),
-    // El SP devuelve la fecha de pago como TIMESTAMP (con hora en 00:00:00);
-    // se recorta a solo fecha para que no se vea la hora en el Excel.
+    // Por si alguna fecha viniera con hora (igual que antes con el SP).
     post: (rows) => stripTimeOfDay(rows),
   },
   AntiguedadCxC: {
