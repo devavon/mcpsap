@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SAP B1 — Consultas</title>
+  <script type="text/javascript" src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
+</head>
+<body>
+  <div class="app">
+    <!-- ---------- Topbar ---------- -->
+    <header class="topbar">
+      <div class="brand">
+        <img class="brand-logo" src="assets/icon-80.png" alt="Garnier" />
+        <div class="brand-text">
+          <strong>SAP Business One</strong>
+          <small>Consultas a Excel</small>
+        </div>
+      </div>
+      <div class="topbar-actions">
+        <span id="statusPill" class="status-pill offline">
+          <span class="dot"></span><span id="statusText">Sin conexión</span>
+        </span>
+        <button id="btnSettings" class="icon-btn" title="Conexión" aria-label="Configurar conexión"></button>
+        <button id="btnLogout" class="icon-btn hidden" title="Cerrar sesión" aria-label="Cerrar sesión"></button>
+      </div>
+    </header>
+
+    <div class="content">
+      <!-- ---------- Message bar ---------- -->
+      <div id="msgbar" class="msgbar hidden" role="status"></div>
+
+      <!-- ---------- Ajustes de conexión (plegable) ---------- -->
+      <section id="settings" class="card hidden">
+        <div class="field">
+          <label for="apiUrl">Servidor (API)</label>
+          <input id="apiUrl" type="url" class="control" placeholder="https://localhost:3000/api" />
+          <span class="hint">URL base de la API REST del conector MCPSAP.</span>
+        </div>
+      </section>
+
+      <!-- ---------- Vista: Login ---------- -->
+      <section id="loginView" class="view hidden">
+        <div class="card">
+          <h2 class="card-title">Iniciar sesión</h2>
+          <p class="card-sub">Ingrese con su usuario de SAP Business One.</p>
+          <div class="field">
+            <label for="username">Usuario</label>
+            <input id="username" type="text" class="control" autocomplete="username" />
+          </div>
+          <div class="field">
+            <label for="password">Contraseña</label>
+            <input id="password" type="password" class="control" autocomplete="current-password" />
+          </div>
+          <button id="btnLogin" class="btn btn-primary btn-block">Entrar</button>
+        </div>
+      </section>
+
+      <!-- ---------- Vista: Consulta ---------- -->
+      <section id="mainView" class="view hidden">
+        <div class="card">
+          <div id="companyField" class="field">
+            <label for="company">Empresa</label>
+            <select id="company" class="control"></select>
+          </div>
+
+          <div class="field">
+            <label>¿Qué datos quieres traer?</label>
+            <div id="entityCombo" class="combo"></div>
+            <span id="entityDesc" class="hint"></span>
+          </div>
+
+          <!-- Filtros dinámicos según la entidad/informe -->
+          <div id="filters"></div>
+
+          <!-- Filas / columnas (solo entidades) -->
+          <div id="rowsBox" class="row">
+            <div class="field">
+              <label for="rowLimit">Filas</label>
+              <select id="rowLimit" class="control">
+                <option value="500">500 (rápido)</option>
+                <option value="100">100</option>
+                <option value="1000">1000</option>
+                <option value="all">Todas</option>
+              </select>
+            </div>
+            <div class="field" style="justify-content:flex-end">
+              <label class="checkbox" style="margin-bottom:7px"><input type="checkbox" id="allColumns" /> Todas las columnas <span class="hint">(más lento)</span></label>
+            </div>
+          </div>
+
+          <details id="advBox" class="adv">
+            <summary>Opciones avanzadas</summary>
+            <div class="field">
+              <label for="filter">Filtro OData adicional</label>
+              <input id="filter" type="text" class="control" placeholder="ej. DocTotal gt 1000" />
+            </div>
+            <div class="field">
+              <label for="orderby">Ordenar por</label>
+              <input id="orderby" type="text" class="control" placeholder="ej. DocDate desc" />
+            </div>
+          </details>
+
+          <button id="btnQuery" class="btn btn-primary btn-block">Consultar</button>
+        </div>
+
+        <!-- Vista previa de resultados -->
+        <div id="previewCard" class="card hidden">
+          <div class="preview-head">
+            <span class="preview-count"><span id="previewNum" class="num">0</span> filas · <span id="previewCols" class="num">0</span> columnas</span>
+            <span id="previewCompany" class="badge"></span>
+          </div>
+          <div class="table-wrap">
+            <table class="mini">
+              <thead><tr id="previewHead"></tr></thead>
+              <tbody id="previewBody"></tbody>
+            </table>
+          </div>
+          <div class="preview-foot">
+            <label class="checkbox"><input type="checkbox" id="newSheet" /> Volcar en una hoja nueva</label>
+            <button id="btnDump" class="btn btn-primary"></button>
+          </div>
+        </div>
+
+        <!-- Estado vacío -->
+        <div id="emptyState" class="empty">
+          <div class="emoji">📊</div>
+          <p>Elige los datos y pulsa <strong>Consultar</strong> para ver una vista previa antes de traerlos a Excel.</p>
+        </div>
+      </section>
+    </div>
+
+    <footer class="foot">
+      <span id="footUser">Conector SAP B1 · solo lectura</span>
+    </footer>
+  </div>
+</body>
+</html>
