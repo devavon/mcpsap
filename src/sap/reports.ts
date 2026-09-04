@@ -1024,11 +1024,14 @@ WHERE T0."DocDate" >= ? AND T0."DocDate" <= ? AND T0."CANCELED"='N'`,
       const ovpmCodCC_T3 = ovpmHasCC ? `T3."U_CodCC"` : nullCode;
       const ovpmCodCCJoin = ovpmHasCC ? `T3."U_CodCC" = T4."OcrCode"` : "1=0";
       const nullRef = 'CAST(NULL AS NVARCHAR(50))';
-      const oinvRefCastCol = oinvRef.has("U_Ref4Cast") ? `T2."U_Ref4Cast"` : nullRef;
-      const orpcRefCastCol = orpcRef.has("U_Ref4Cast") ? `T2."U_Ref4Cast"` : nullRef;
-      const odpoRefCastCol = odpoRef.has("U_Ref4Cast") ? `T2."U_Ref4Cast"` : nullRef;
-      const opchRefCastCol = opchRef.has("U_Ref4Cast") ? `T2."U_Ref4Cast"` : nullRef;
-      const odpiRefCastCol = odpiRef.has("U_Ref4Cast") ? `T2."U_Ref4Cast"` : nullRef;
+      // CAST a NVARCHAR: si el UDF es tipo "Texto" en SAP B1, HANA lo crea como NCLOB,
+      // y un LOB no puede ir en un SELECT DISTINCT (error "invalid datatype: LOB type
+      // in distinct select clause"). El CAST lo vuelve comparable sin cambiar el dato.
+      const oinvRefCastCol = oinvRef.has("U_Ref4Cast") ? `CAST(T2."U_Ref4Cast" AS NVARCHAR(5000))` : nullRef;
+      const orpcRefCastCol = orpcRef.has("U_Ref4Cast") ? `CAST(T2."U_Ref4Cast" AS NVARCHAR(5000))` : nullRef;
+      const odpoRefCastCol = odpoRef.has("U_Ref4Cast") ? `CAST(T2."U_Ref4Cast" AS NVARCHAR(5000))` : nullRef;
+      const opchRefCastCol = opchRef.has("U_Ref4Cast") ? `CAST(T2."U_Ref4Cast" AS NVARCHAR(5000))` : nullRef;
+      const odpiRefCastCol = odpiRef.has("U_Ref4Cast") ? `CAST(T2."U_Ref4Cast" AS NVARCHAR(5000))` : nullRef;
       const text = `
 --Pagos recibidos facturas
 SELECT DISTINCT T0."DocNum" AS "NumPago",T0."DocDate" AS "Fecha de Pago", T2."DocNum",
